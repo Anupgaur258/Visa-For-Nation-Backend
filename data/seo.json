@@ -1,0 +1,57 @@
+[
+  {
+    "_id": "seo_home",
+    "pageUrl": "/",
+    "metaTitle": "Best Immigration Consultants in Delhi | Visa For Nation",
+    "metaDescription": "Visa For Nation is Delhi's trusted immigration consultancy for Canada PR, Australia PR, Study Abroad, Work Permits, and Tourist Visas. Free assessment.",
+    "keywords": "immigration consultants in delhi, canada pr, australia pr, study abroad, visa for nation, kailash colony",
+    "canonicalUrl": "https://visafornation.com/",
+    "ogImage": "https://visafornation.com/logo.png",
+    "customHeaderTags": "<script type=\"application/ld+json\">\n{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"TravelAgency\",\n  \"name\": \"Visa For Nation\",\n  \"url\": \"https://visafornation.com/\",\n  \"telephone\": \"+91-7677666677\",\n  \"address\": {\n    \"@type\": \"PostalAddress\",\n    \"streetAddress\": \"HS-33, Kailash Colony Market, Greater Kailash-1\",\n    \"addressLocality\": \"New Delhi\",\n    \"postalCode\": \"110048\",\n    \"addressCountry\": \"IN\"\n  }\n}\n</script>",
+    "status": "active"
+  },
+  {
+    "_id": "seo_about",
+    "pageUrl": "/about",
+    "metaTitle": "About Visa For Nation | Trusted Immigration Consultancy Delhi",
+    "metaDescription": "Learn about Visa For Nation, our vision, mission, and experienced team guiding thousands of clients to successful international migration.",
+    "keywords": "about visa for nation, immigration experts delhi, visa consultancy greater kailash",
+    "canonicalUrl": "https://visafornation.com/about",
+    "ogImage": "https://visafornation.com/logo.png",
+    "customHeaderTags": "",
+    "status": "active"
+  },
+  {
+    "_id": "seo_contact",
+    "pageUrl": "/contact-us",
+    "metaTitle": "Contact Visa For Nation | Office in Kailash Colony New Delhi",
+    "metaDescription": "Get in touch with Visa For Nation in Kailash Colony Market, Greater Kailash-1, New Delhi. Call +91 7677666677 for a free eligibility evaluation.",
+    "keywords": "contact visa for nation, immigration office delhi, kailash colony visa consultant",
+    "canonicalUrl": "https://visafornation.com/contact-us",
+    "ogImage": "https://visafornation.com/logo.png",
+    "customHeaderTags": "",
+    "status": "active"
+  },
+  {
+    "_id": "seo_canada_pr",
+    "pageUrl": "/visa/pr/canada",
+    "metaTitle": "Canada PR Visa 2026: Express Entry, PNP & Process from India",
+    "metaDescription": "Apply for Canada Permanent Residency (PR) with Visa For Nation. Expert guidance for Express Entry CRS score, PNP nominations, and document filing.",
+    "keywords": "canada pr visa, express entry draw, pnp canada, canada immigration delhi",
+    "canonicalUrl": "https://visafornation.com/visa/pr/canada",
+    "ogImage": "https://visafornation.com/logo.png",
+    "customHeaderTags": "",
+    "status": "active"
+  },
+  {
+    "_id": "seo_australia_pr",
+    "pageUrl": "/visa/pr/australia",
+    "metaTitle": "Australia PR Visa Guide: Subclass 189, 190, 491 Points & Process",
+    "metaDescription": "Complete guide for Australia PR from India. Calculate points, understand Subclass 189, 190 and 491 visas, skills assessment, and eligibility.",
+    "keywords": "australia pr, subclass 189, subclass 190, subclass 491, australia immigration delhi",
+    "canonicalUrl": "https://visafornation.com/visa/pr/australia",
+    "ogImage": "https://visafornation.com/logo.png",
+    "customHeaderTags": "",
+    "status": "active"
+  }
+]

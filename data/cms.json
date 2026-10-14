@@ -1,0 +1,71 @@
+{
+  "home": {
+    "hero": {
+      "eyebrow": "Trusted Visa & Immigration Consultants",
+      "title": "Your Global Journey Begins with",
+      "accent": "Visa For Nation",
+      "subtitle": "Expert guidance for Permanent Residency, Work Permits, Study Visas, and Tourist Visas from Delhi's leading immigration consultancy.",
+      "experienceYears": "10+",
+      "successRate": "98%",
+      "happyClients": "15,000+",
+      "bannerImage": ""
+    },
+    "why_us": {
+      "tag": "Why Choose Us",
+      "title": "Why Visa For Nation Stands Out",
+      "accent": "From The Rest",
+      "items": [
+        {
+          "title": "Visa Application Assistance",
+          "desc": "Dedicated support for documentation, filings, and embassy requirements — ensuring a smooth and hassle-free process."
+        },
+        {
+          "title": "Settlement Services",
+          "desc": "Guidance for accommodation, lifestyle setup, and essential services — helping you settle comfortably abroad."
+        },
+        {
+          "title": "Career Assistance",
+          "desc": "Support for job search, profile building, and connections — empowering you to start strong in your new country."
+        }
+      ]
+    },
+    "contact_banner": {
+      "title": "Ready to Start Your Global Journey?",
+      "subtitle": "Talk to our senior immigration consultants in Kailash Colony, New Delhi for a free eligibility check.",
+      "phone": "+91 7677666677",
+      "email": "info@visafornation.com"
+    }
+  },
+  "about": {
+    "hero": {
+      "eyebrow": "About Us",
+      "title": "Delhi's Trusted Immigration",
+      "accent": "Consultants",
+      "lead": "Honest guidance, properly documented applications and support at every step."
+    },
+    "purpose": {
+      "visionTitle": "A World Without Boundaries",
+      "visionText": "To become a trusted immigration consultancy connecting people with global opportunities through ethical, informed guidance.",
+      "missionTitle": "Making Your Journey Simpler",
+      "missionText": "To simplify the immigration process through specialised consultation, transparent communication and end-to-end support."
+    },
+    "commitment": {
+      "title": "Your Dreams Deserve The Right Direction",
+      "tag": "OUR COMMITMENT",
+      "text1": "At Visa For Nation, we believe every global dream deserves the right guidance — delivered with integrity, expertise and commitment.",
+      "text2": "We are a dedicated team of visa professionals helping individuals, students, skilled professionals and families explore international opportunities."
+    }
+  },
+  "contact": {
+    "office": {
+      "address": "HS-33, Kailash Colony Market, Greater Kailash-1, New Delhi, Delhi 110048",
+      "phone": "+91 7677666677",
+      "email": "info@visafornation.com",
+      "whatsapp": "+91 7677666677",
+      "timings": "Mon to Sat: 10:00 AM – 6:00 PM",
+      "saturday": "10:00 AM – 4:00 PM",
+      "sunday": "Closed",
+      "mapEmbedUrl": "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3504.545628094768!2d77.2424971!3d28.553374!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x83678360f861adbb%3A0x6e0d63b897943054!2sVisa%20For%20Nation!5e0!3m2!1sen!2sin"
+    }
+  }
+}
