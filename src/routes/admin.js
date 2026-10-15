@@ -20,6 +20,13 @@ import {
   getAllPostsAdmin,
   savePost,
   deletePost,
+  getAllBanners, saveBanner, deleteBanner,
+  getAllReels, saveReel, deleteReel,
+  getAllTestimonials, saveTestimonial, deleteTestimonial,
+  getAllReviews, saveReview, deleteReview,
+  getAllTeamImages, saveTeamImage, deleteTeamImage,
+  getAllCareerJobs, saveCareerJob, deleteCareerJob,
+  getAllCareerApplications, deleteCareerApplication,
 } from '../services/storage.js';
 
 const r = Router();
@@ -240,4 +247,95 @@ r.post('/seo/validate', wrap(async (req, res) => {
   });
 }));
 
+
+/* ========================================================================== */
+/*  TAB 4: CAREER & CONTENT MANAGEMENT                                        */
+/* ========================================================================== */
+// Banners
+r.get('/banner', wrap(async (_req, res) => {
+  res.json(await getAllBanners());
+}));
+r.post('/banner', wrap(async (req, res) => {
+  res.json(await saveBanner(req.body));
+}));
+r.delete('/banner/:id', wrap(async (req, res) => {
+  await deleteBanner(req.params.id);
+  res.json({ ok: true });
+}));
+
+// Reels
+r.get('/reel', wrap(async (_req, res) => {
+  res.json(await getAllReels());
+}));
+r.post('/reel', wrap(async (req, res) => {
+  res.json(await saveReel(req.body));
+}));
+r.delete('/reel/:id', wrap(async (req, res) => {
+  await deleteReel(req.params.id);
+  res.json({ ok: true });
+}));
+
+// Testimonials
+r.get('/testimonial', wrap(async (_req, res) => {
+  res.json(await getAllTestimonials());
+}));
+r.post('/testimonial', wrap(async (req, res) => {
+  res.json(await saveTestimonial(req.body));
+}));
+r.delete('/testimonial/:id', wrap(async (req, res) => {
+  await deleteTestimonial(req.params.id);
+  res.json({ ok: true });
+}));
+
+// Reviews
+r.get('/review', wrap(async (_req, res) => {
+  res.json(await getAllReviews());
+}));
+r.post('/review', wrap(async (req, res) => {
+  res.json(await saveReview(req.body));
+}));
+r.delete('/review/:id', wrap(async (req, res) => {
+  await deleteReview(req.params.id);
+  res.json({ ok: true });
+}));
+
+// Team Images
+r.get('/team-image', wrap(async (_req, res) => {
+  res.json(await getAllTeamImages());
+}));
+r.post('/team-image', wrap(async (req, res) => {
+  res.json(await saveTeamImage(req.body));
+}));
+r.delete('/team-image/:id', wrap(async (req, res) => {
+  await deleteTeamImage(req.params.id);
+  res.json({ ok: true });
+}));
+
+// Career Jobs
+r.get('/career/job', wrap(async (_req, res) => {
+  res.json(await getAllCareerJobs());
+}));
+r.post('/career/job', wrap(async (req, res) => {
+  res.json(await saveCareerJob(req.body));
+}));
+r.put('/career/job/:id', wrap(async (req, res) => {
+  res.json(await saveCareerJob({ ...req.body, _id: req.params.id }));
+}));
+r.delete('/career/job/:id', wrap(async (req, res) => {
+  await deleteCareerJob(req.params.id);
+  res.json({ ok: true });
+}));
+
+// Career Applications
+r.get('/career/application', wrap(async (_req, res) => {
+  res.json(await getAllCareerApplications());
+}));
+r.post('/career/application', wrap(async (req, res) => {
+  res.json(await saveCareerApplication(req.body));
+}));
+r.delete('/career/application/:id', wrap(async (req, res) => {
+  await deleteCareerApplication(req.params.id);
+  res.json({ ok: true });
+}));
 export default r;
+

@@ -73,3 +73,11 @@ export const Admin = model('Admin', new Schema({
   email: { type: String, unique: true },
   password: String,
 }, opts));
+
+export { Banner } from './Banner.js';
+export { Reel } from './Reel.js';
+export { Testimonial } from './Testimonial.js';
+export { Review } from './Review.js';
+export { TeamImage } from './TeamImage.js';
+export { CareerJob } from './CareerJob.js';
+export { CareerApplication } from './CareerApplication.js';

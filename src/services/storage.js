@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { dbState } from '../config/db.js';
-import { Page, Post, Inquiry, CMSContent, SEOMetadata, Admin } from '../models/index.js';
+import { Page, Post, Inquiry, CMSContent, SEOMetadata, Admin, Banner, Reel, Testimonial, Review, TeamImage, CareerJob, CareerApplication } from '../models/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -377,6 +377,8 @@ export async function getAllPostsAdmin() {
 }
 
 export async function savePost(data) {
+  const maxBlogChars = Math.max(1, Number(process.env.BLOG_MAX_CONTENT_CHARS || 800));
+  if (String(data.content || '').length > maxBlogChars) throw Object.assign(new Error('Blog content cannot exceed ' + maxBlogChars + ' characters.'), { status: 400 });
   let saved = null;
   if (!data.slug && data.title) {
     data.slug = data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -434,6 +436,282 @@ export async function verifyAdmin(email, password) {
         return { email: a.email, id: a._id };
       }
     } catch (e) {}
+  }
+  return null;
+}
+
+
+// ==========================================================================
+// CUSTOM MODEL FUNCTIONS
+// ==========================================================================
+
+export async function getAllBanners() {
+  if (dbState.isConnected) {
+    try {
+      return await Banner.find().sort({ displayOrder: 1 });
+    } catch (e) {
+      console.warn('getAllBanners DB error:', e.message);
+    }
+  }
+  return [];
+}
+
+export async function saveBanner(bannerData) {
+  if (dbState.isConnected) {
+    try {
+      if (bannerData._id) {
+        return await Banner.findByIdAndUpdate(bannerData._id, bannerData, { new: true, runValidators: true });
+      } else {
+        return await Banner.create(bannerData);
+      }
+    } catch (e) {
+      console.warn('saveBanner DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+export async function deleteBanner(id) {
+  if (dbState.isConnected) {
+    try {
+      return await Banner.findByIdAndDelete(id);
+    } catch (e) {
+      console.warn('deleteBanner DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+// Reel
+export async function getAllReels() {
+  if (dbState.isConnected) {
+    try {
+      return await Reel.find().sort({ displayOrder: 1 });
+    } catch (e) {
+      console.warn('getAllReels DB error:', e.message);
+    }
+  }
+  return [];
+}
+
+export async function saveReel(reelData) {
+  if (dbState.isConnected) {
+    try {
+      if (reelData._id) {
+        return await Reel.findByIdAndUpdate(reelData._id, reelData, { new: true, runValidators: true });
+      } else {
+        return await Reel.create(reelData);
+      }
+    } catch (e) {
+      console.warn('saveReel DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+export async function deleteReel(id) {
+  if (dbState.isConnected) {
+    try {
+      return await Reel.findByIdAndDelete(id);
+    } catch (e) {
+      console.warn('deleteReel DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+// Testimonial
+export async function getAllTestimonials() {
+  if (dbState.isConnected) {
+    try {
+      return await Testimonial.find().sort({ _id: -1 });
+    } catch (e) {
+      console.warn('getAllTestimonials DB error:', e.message);
+    }
+  }
+  return [];
+}
+
+export async function saveTestimonial(testimonialData) {
+  const maxCount = Math.max(1, Number(process.env.TESTIMONIAL_MAX_COUNT || 10));
+  if (!testimonialData._id && dbState.isConnected && await Testimonial.countDocuments() >= maxCount) throw Object.assign(new Error('You can add up to ' + maxCount + ' testimonials.'), { status: 400 });
+  if (dbState.isConnected) {
+    try {
+      if (testimonialData._id) {
+        return await Testimonial.findByIdAndUpdate(testimonialData._id, testimonialData, { new: true, runValidators: true });
+      } else {
+        return await Testimonial.create(testimonialData);
+      }
+    } catch (e) {
+      console.warn('saveTestimonial DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+export async function deleteTestimonial(id) {
+  if (dbState.isConnected) {
+    try {
+      return await Testimonial.findByIdAndDelete(id);
+    } catch (e) {
+      console.warn('deleteTestimonial DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+// Review
+export async function getAllReviews() {
+  if (dbState.isConnected) {
+    try {
+      return await Review.find().sort({ _id: -1 });
+    } catch (e) {
+      console.warn('getAllReviews DB error:', e.message);
+    }
+  }
+  return [];
+}
+
+export async function saveReview(reviewData) {
+  const maxCount = Math.max(1, Number(process.env.REVIEW_MAX_COUNT || 10));
+  const maxChars = Math.max(1, Number(process.env.REVIEW_MAX_MESSAGE_CHARS || 200));
+  if (String(reviewData.message || '').length > maxChars) throw Object.assign(new Error('Review message cannot exceed ' + maxChars + ' characters.'), { status: 400 });
+  if (!reviewData._id && dbState.isConnected && await Review.countDocuments() >= maxCount) throw Object.assign(new Error('You can add up to ' + maxCount + ' reviews.'), { status: 400 });
+  if (dbState.isConnected) {
+    try {
+      if (reviewData._id) {
+        return await Review.findByIdAndUpdate(reviewData._id, reviewData, { new: true, runValidators: true });
+      } else {
+        return await Review.create(reviewData);
+      }
+    } catch (e) {
+      console.warn('saveReview DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+export async function deleteReview(id) {
+  if (dbState.isConnected) {
+    try {
+      return await Review.findByIdAndDelete(id);
+    } catch (e) {
+      console.warn('deleteReview DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+// TeamImage
+export async function getAllTeamImages() {
+  if (dbState.isConnected) {
+    try {
+      return await TeamImage.find().sort({ _id: -1 });
+    } catch (e) {
+      console.warn('getAllTeamImages DB error:', e.message);
+    }
+  }
+  return [];
+}
+
+export async function saveTeamImage(teamImageData) {
+  if (dbState.isConnected) {
+    try {
+      if (teamImageData._id) {
+        return await TeamImage.findByIdAndUpdate(teamImageData._id, teamImageData, { new: true, runValidators: true });
+      } else {
+        return await TeamImage.create(teamImageData);
+      }
+    } catch (e) {
+      console.warn('saveTeamImage DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+export async function deleteTeamImage(id) {
+  if (dbState.isConnected) {
+    try {
+      return await TeamImage.findByIdAndDelete(id);
+    } catch (e) {
+      console.warn('deleteTeamImage DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+// CareerJob
+export async function getAllCareerJobs() {
+  if (dbState.isConnected) {
+    try {
+      return await CareerJob.find().sort({ _id: -1 });
+    } catch (e) {
+      console.warn('getAllCareerJobs DB error:', e.message);
+    }
+  }
+  return [];
+}
+
+export async function saveCareerJob(jobData) {
+  if (dbState.isConnected) {
+    try {
+      if (jobData._id) {
+        return await CareerJob.findByIdAndUpdate(jobData._id, jobData, { new: true, runValidators: true });
+      } else {
+        return await CareerJob.create(jobData);
+      }
+    } catch (e) {
+      console.warn('saveCareerJob DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+export async function deleteCareerJob(id) {
+  if (dbState.isConnected) {
+    try {
+      return await CareerJob.findByIdAndDelete(id);
+    } catch (e) {
+      console.warn('deleteCareerJob DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+// CareerApplication
+export async function getAllCareerApplications() {
+  if (dbState.isConnected) {
+    try {
+      return await CareerApplication.find().populate('job').sort({ appliedAt: -1 });
+    } catch (e) {
+      console.warn('getAllCareerApplications DB error:', e.message);
+    }
+  }
+  return [];
+}
+
+export async function saveCareerApplication(appData) {
+  if (dbState.isConnected) {
+    try {
+      if (appData._id) {
+        return await CareerApplication.findByIdAndUpdate(appData._id, appData, { new: true, runValidators: true });
+      } else {
+        return await CareerApplication.create(appData);
+      }
+    } catch (e) {
+      console.warn('saveCareerApplication DB error:', e.message);
+    }
+  }
+  return null;
+}
+
+export async function deleteCareerApplication(id) {
+  if (dbState.isConnected) {
+    try {
+      return await CareerApplication.findByIdAndDelete(id);
+    } catch (e) {
+      console.warn('deleteCareerApplication DB error:', e.message);
+    }
   }
   return null;
 }
