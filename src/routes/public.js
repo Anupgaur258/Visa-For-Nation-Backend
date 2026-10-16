@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { getPage, getAllPages, getCMSContent, getSEO, getPosts, getPostBySlug, createInquiry, saveCMSSection, getAllCareerJobs, saveCareerApplication } from '../services/storage.js';
+import { getPage, getAllPages, getCMSContent, getSEO, getPosts, getPostBySlug, createInquiry, saveCMSSection, getAllCareerJobs, saveCareerApplication, getAllTestimonials, likeTestimonial } from '../services/storage.js';
 import emailService from '../services/emailService.js';
 
 const r = Router();
@@ -84,6 +84,15 @@ r.post('/inquiries', wrap(async (req, res) => {
 }));
 
 
+// Public client testimonials and persisted likes
+r.get('/testimonials', wrap(async (_req, res) => {
+  res.json(await getAllTestimonials());
+}));
+r.post('/testimonials/:id/like', wrap(async (req, res) => {
+  const testimonial = await likeTestimonial(req.params.id);
+  if (!testimonial) return res.status(404).json({ message: 'Testimonial not found.' });
+  res.json({ id: testimonial._id, likes: testimonial.likes });
+}));
 // Public career listings and candidate applications
 const careerUploadDir = path.resolve('uploads');
 if (!fs.existsSync(careerUploadDir)) fs.mkdirSync(careerUploadDir, { recursive: true });

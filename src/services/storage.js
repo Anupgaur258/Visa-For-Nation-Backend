@@ -549,6 +549,15 @@ export async function saveTestimonial(testimonialData) {
   return null;
 }
 
+export async function likeTestimonial(id) {
+  if (!dbState.isConnected) return null;
+  try {
+    return await Testimonial.findByIdAndUpdate(id, { $inc: { likes: 1 } }, { new: true });
+  } catch (e) {
+    console.warn('likeTestimonial DB error:', e.message);
+    return null;
+  }
+}
 export async function deleteTestimonial(id) {
   if (dbState.isConnected) {
     try {

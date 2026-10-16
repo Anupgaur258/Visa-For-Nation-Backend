@@ -6,4 +6,5 @@ export const Testimonial = model('Testimonial', new Schema({
   videoUrl: { type: String, required: true },
   title: String,
   description: String,
+  likes: { type: Number, default: 0, min: 0 },
 }, opts));
