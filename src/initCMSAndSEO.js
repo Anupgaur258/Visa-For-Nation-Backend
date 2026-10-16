@@ -88,7 +88,7 @@ const initialSEO = [
     metaDescription: "Visa For Nation is Delhi's trusted immigration consultancy for Canada PR, Australia PR, Study Abroad, Work Permits, and Tourist Visas. Free assessment.",
     keywords: "immigration consultants in delhi, canada pr, australia pr, study abroad, visa for nation, kailash colony",
     canonicalUrl: "https://visafornation.com/",
-    ogImage: "https://visafornation.com/logo.png",
+    ogImage: "/logo.png",
     customHeaderTags: `<script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -114,7 +114,7 @@ const initialSEO = [
     metaDescription: "Learn about Visa For Nation, our vision, mission, and experienced team guiding thousands of clients to successful international migration.",
     keywords: "about visa for nation, immigration experts delhi, visa consultancy greater kailash",
     canonicalUrl: "https://visafornation.com/about",
-    ogImage: "https://visafornation.com/logo.png",
+    ogImage: "/logo.png",
     customHeaderTags: "",
     status: "active"
   },
@@ -125,7 +125,7 @@ const initialSEO = [
     metaDescription: "Get in touch with Visa For Nation in Kailash Colony Market, Greater Kailash-1, New Delhi. Call +91 7677666677 for a free eligibility evaluation.",
     keywords: "contact visa for nation, immigration office delhi, kailash colony visa consultant",
     canonicalUrl: "https://visafornation.com/contact-us",
-    ogImage: "https://visafornation.com/logo.png",
+    ogImage: "/logo.png",
     customHeaderTags: "",
     status: "active"
   },
@@ -136,7 +136,7 @@ const initialSEO = [
     metaDescription: "Apply for Canada Permanent Residency (PR) with Visa For Nation. Expert guidance for Express Entry CRS score, PNP nominations, and document filing.",
     keywords: "canada pr visa, express entry draw, pnp canada, canada immigration delhi",
     canonicalUrl: "https://visafornation.com/visa/pr/canada",
-    ogImage: "https://visafornation.com/logo.png",
+    ogImage: "/logo.png",
     customHeaderTags: "",
     status: "active"
   },
@@ -147,7 +147,7 @@ const initialSEO = [
     metaDescription: "Complete guide for Australia PR from India. Calculate points, understand Subclass 189, 190 and 491 visas, skills assessment, and eligibility.",
     keywords: "australia pr, subclass 189, subclass 190, subclass 491, australia immigration delhi",
     canonicalUrl: "https://visafornation.com/visa/pr/australia",
-    ogImage: "https://visafornation.com/logo.png",
+    ogImage: "/logo.png",
     customHeaderTags: "",
     status: "active"
   }
