@@ -64,8 +64,9 @@ export const SEOMetadata = model('SEOMetadata', new Schema({
   metaDescription: String,
   keywords: String,
   canonicalUrl: String,
+  ogTitle: String,
+  ogDescription: String,
   ogImage: String,
-  customHeaderTags: String,
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
 }, opts));
 

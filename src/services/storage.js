@@ -339,13 +339,13 @@ export async function getPosts(category) {
     try {
       const f = { status: 'published' };
       if (category) f.category = category;
-      const posts = await Post.find(f).select('-content').sort('-createdAt');
+      const posts = await Post.find(f).select('-content').sort('-createdAt').limit(Math.max(0, Number(process.env.BLOG_MAX_COUNT || 30)));
       if (posts.length > 0) return posts;
     } catch (e) {}
   }
   let posts = readJSON('posts.json', []);
   if (category) posts = posts.filter(p => p.category === category);
-  return posts.map(({ content, ...rest }) => rest);
+  return posts.slice().sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, Math.max(0, Number(process.env.BLOG_MAX_COUNT || 30))).map(({ content, ...rest }) => rest);
 }
 
 export async function getPostBySlug(slug) {
@@ -533,7 +533,7 @@ export async function getAllTestimonials() {
 }
 
 export async function saveTestimonial(testimonialData) {
-  const maxCount = Math.max(1, Number(process.env.TESTIMONIAL_MAX_COUNT || 10));
+  const maxCount = Math.max(1, Number(process.env.TESTIMONIAL_MAX_COUNT || 20));
   if (!testimonialData._id && dbState.isConnected && await Testimonial.countDocuments() >= maxCount) throw Object.assign(new Error('You can add up to ' + maxCount + ' testimonials.'), { status: 400 });
   if (dbState.isConnected) {
     try {
@@ -582,7 +582,7 @@ export async function getAllReviews() {
 }
 
 export async function saveReview(reviewData) {
-  const maxCount = Math.max(1, Number(process.env.REVIEW_MAX_COUNT || 10));
+  const maxCount = Math.max(1, Number(process.env.REVIEW_MAX_COUNT || 20));
   const maxChars = Math.max(1, Number(process.env.REVIEW_MAX_MESSAGE_CHARS || 200));
   if (String(reviewData.message || '').length > maxChars) throw Object.assign(new Error('Review message cannot exceed ' + maxChars + ' characters.'), { status: 400 });
   if (!reviewData._id && dbState.isConnected && await Review.countDocuments() >= maxCount) throw Object.assign(new Error('You can add up to ' + maxCount + ' reviews.'), { status: 400 });
@@ -687,40 +687,46 @@ export async function deleteCareerJob(id) {
   return null;
 }
 
+export async function getCareerApplicationCount(jobId) {
+  if (dbState.isConnected) {
+    try { return await CareerApplication.countDocuments({ job: jobId }); }
+    catch (e) { console.warn('getCareerApplicationCount DB error:', e.message); }
+  }
+  return readJSON('career-applications.json', []).filter(item => String(item.job?._id || item.job) === String(jobId)).length;
+}
 // CareerApplication
 export async function getAllCareerApplications() {
   if (dbState.isConnected) {
-    try {
-      return await CareerApplication.find().populate('job').sort({ appliedAt: -1 });
-    } catch (e) {
-      console.warn('getAllCareerApplications DB error:', e.message);
-    }
+    try { return await CareerApplication.find().populate('job').sort({ appliedAt: -1 }); }
+    catch (e) { console.warn('getAllCareerApplications DB error:', e.message); }
   }
-  return [];
+  const applications = readJSON('career-applications.json', []);
+  const jobs = await getAllCareerJobs();
+  return applications.map(application => ({ ...application, job: jobs.find(job => String(job._id) === String(application.job)) || null })).sort((a, b) => new Date(b.appliedAt || b.createdAt) - new Date(a.appliedAt || a.createdAt));
 }
 
 export async function saveCareerApplication(appData) {
   if (dbState.isConnected) {
     try {
-      if (appData._id) {
-        return await CareerApplication.findByIdAndUpdate(appData._id, appData, { new: true, runValidators: true });
-      } else {
-        return await CareerApplication.create(appData);
-      }
-    } catch (e) {
-      console.warn('saveCareerApplication DB error:', e.message);
-    }
+      if (appData._id) return await CareerApplication.findByIdAndUpdate(appData._id, appData, { new: true, runValidators: true });
+      return await CareerApplication.create({ status: 'received', ...appData });
+    } catch (e) { console.warn('saveCareerApplication DB error:', e.message); }
   }
-  return null;
+  const applications = readJSON('career-applications.json', []);
+  const id = appData._id || `application_${Date.now()}`;
+  const index = applications.findIndex(item => String(item._id) === String(id));
+  const saved = { ...(index >= 0 ? applications[index] : {}), ...appData, _id: id, status: appData.status || applications[index]?.status || 'received', appliedAt: appData.appliedAt || applications[index]?.appliedAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+  if (index >= 0) applications[index] = saved; else applications.push(saved);
+  writeJSON('career-applications.json', applications);
+  return saved;
 }
 
 export async function deleteCareerApplication(id) {
   if (dbState.isConnected) {
-    try {
-      return await CareerApplication.findByIdAndDelete(id);
-    } catch (e) {
-      console.warn('deleteCareerApplication DB error:', e.message);
-    }
+    try { return await CareerApplication.findByIdAndDelete(id); }
+    catch (e) { console.warn('deleteCareerApplication DB error:', e.message); }
   }
-  return null;
+  const applications = readJSON('career-applications.json', []).filter(item => String(item._id) !== String(id));
+  writeJSON('career-applications.json', applications);
+  return { _id: id };
 }
