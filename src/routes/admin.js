@@ -31,6 +31,9 @@ import {
 
 const r = Router();
 const wrap = fn => (req, res, next) => fn(req, res).catch(next);
+const itemLimit = (name, fallback) => Math.max(0, Number(process.env[name] || fallback));
+const awardSectionLimit = itemLimit('AWARD_SECTION_MAX_COUNT', 20);
+const contentLimits = { posts: itemLimit('BLOG_MAX_COUNT', 30), banners: itemLimit('BANNER_MAX_COUNT', 20), reels: itemLimit('REEL_MAX_COUNT', 20), testimonials: itemLimit('TESTIMONIAL_MAX_COUNT', 20), reviews: itemLimit('REVIEW_MAX_COUNT', 20), teamImages: itemLimit('TEAM_IMAGE_MAX_COUNT', 20) };
 
 // Ensure uploads directory exists
 const uploadsDir = path.resolve('uploads');
@@ -122,6 +125,7 @@ r.get('/cms/:page', wrap(async (req, res) => {
 }));
 
 r.post('/cms/:page/:section', wrap(async (req, res) => {
+  if (req.params.page === 'awards' && Array.isArray(req.body.images) && req.body.images.length > awardSectionLimit) return res.status(400).json({ message: 'Each award section can contain up to ' + awardSectionLimit + ' images.' });
   const result = await saveCMSSection(req.params.page, req.params.section, req.body);
   res.json(result);
 }));
@@ -150,6 +154,7 @@ r.get('/posts', wrap(async (_req, res) => {
 }));
 
 r.post('/posts', wrap(async (req, res) => {
+  if (!req.body._id && (await getAllPostsAdmin()).length >= contentLimits.posts) return res.status(400).json({ message: 'You can add up to ' + contentLimits.posts + ' blogs.' });
   res.status(201).json(await savePost(req.body));
 }));
 
@@ -185,9 +190,9 @@ r.delete('/seo/:id', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// SEO Code & Header Tag Validator
+// SEO Metadata Validator
 r.post('/seo/validate', wrap(async (req, res) => {
-  const { customHeaderTags, metaTitle, metaDescription } = req.body;
+  const { metaTitle, metaDescription } = req.body;
   const errors = [];
   const warnings = [];
 
@@ -201,43 +206,6 @@ r.post('/seo/validate', wrap(async (req, res) => {
   if (metaDescription) {
     if (metaDescription.length > 160) warnings.push(`Meta Description is ${metaDescription.length} characters (recommended: 140-160 characters).`);
     if (metaDescription.length < 70) warnings.push('Meta Description is relatively short (recommend at least 70 characters).');
-  }
-
-  // Header code validation
-  if (customHeaderTags) {
-    const tags = customHeaderTags.trim();
-
-    // Check unclosed <script>
-    const scriptOpen = (tags.match(/<script\b[^>]*>/gi) || []).length;
-    const scriptClose = (tags.match(/<\/script>/gi) || []).length;
-    if (scriptOpen !== scriptClose) {
-      errors.push(`Mismatched <script> tags: found ${scriptOpen} opening tag(s) but ${scriptClose} closing tag(s).`);
-    }
-
-    // Check unclosed <style>
-    const styleOpen = (tags.match(/<style\b[^>]*>/gi) || []).length;
-    const styleClose = (tags.match(/<\/style>/gi) || []).length;
-    if (styleOpen !== styleClose) {
-      errors.push(`Mismatched <style> tags: found ${styleOpen} opening tag(s) but ${styleClose} closing tag(s).`);
-    }
-
-    // Check unclosed brackets in ld+json
-    const jsonMatches = tags.match(/<script\s+type=["']application\/ld\+json["']>([\s\S]*?)<\/script>/gi);
-    if (jsonMatches) {
-      jsonMatches.forEach((m, idx) => {
-        const jsonContent = m.replace(/<script\b[^>]*>/i, '').replace(/<\/script>/i, '').trim();
-        try {
-          JSON.parse(jsonContent);
-        } catch (e) {
-          errors.push(`Invalid JSON-LD Schema in block #${idx + 1}: ${e.message}`);
-        }
-      });
-    }
-
-    // Check for malformed tags (e.g. << or unclosed <meta)
-    if (/<<|>>/.test(tags)) {
-      warnings.push('Suspicious double angle brackets detected in header code.');
-    }
   }
 
   res.json({
@@ -256,6 +224,7 @@ r.get('/banner', wrap(async (_req, res) => {
   res.json(await getAllBanners());
 }));
 r.post('/banner', wrap(async (req, res) => {
+  if (!req.body._id && (await getAllBanners()).length >= contentLimits.banners) return res.status(400).json({ message: 'Banner limit reached (' + contentLimits.banners + ').' });
   res.json(await saveBanner(req.body));
 }));
 r.delete('/banner/:id', wrap(async (req, res) => {
@@ -268,6 +237,7 @@ r.get('/reel', wrap(async (_req, res) => {
   res.json(await getAllReels());
 }));
 r.post('/reel', wrap(async (req, res) => {
+  if (!req.body._id && (await getAllReels()).length >= contentLimits.reels) return res.status(400).json({ message: 'Reel limit reached (' + contentLimits.reels + ').' });
   res.json(await saveReel(req.body));
 }));
 r.delete('/reel/:id', wrap(async (req, res) => {
@@ -280,6 +250,7 @@ r.get('/testimonial', wrap(async (_req, res) => {
   res.json(await getAllTestimonials());
 }));
 r.post('/testimonial', wrap(async (req, res) => {
+  if (!req.body._id && (await getAllTestimonials()).length >= contentLimits.testimonials) return res.status(400).json({ message: 'Testimonial limit reached (' + contentLimits.testimonials + ').' });
   res.json(await saveTestimonial(req.body));
 }));
 r.delete('/testimonial/:id', wrap(async (req, res) => {
@@ -292,6 +263,7 @@ r.get('/review', wrap(async (_req, res) => {
   res.json(await getAllReviews());
 }));
 r.post('/review', wrap(async (req, res) => {
+  if (!req.body._id && (await getAllReviews()).length >= contentLimits.reviews) return res.status(400).json({ message: 'Review limit reached (' + contentLimits.reviews + ').' });
   res.json(await saveReview(req.body));
 }));
 r.delete('/review/:id', wrap(async (req, res) => {
@@ -304,6 +276,7 @@ r.get('/team-image', wrap(async (_req, res) => {
   res.json(await getAllTeamImages());
 }));
 r.post('/team-image', wrap(async (req, res) => {
+  if (!req.body._id && (await getAllTeamImages()).length >= contentLimits.teamImages) return res.status(400).json({ message: 'Team image limit reached (' + contentLimits.teamImages + ').' });
   res.json(await saveTeamImage(req.body));
 }));
 r.delete('/team-image/:id', wrap(async (req, res) => {

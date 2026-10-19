@@ -89,22 +89,6 @@ const initialSEO = [
     keywords: "immigration consultants in delhi, canada pr, australia pr, study abroad, visa for nation, kailash colony",
     canonicalUrl: "https://visafornation.com/",
     ogImage: "/logo.png",
-    customHeaderTags: `<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "TravelAgency",
-  "name": "Visa For Nation",
-  "url": "https://visafornation.com/",
-  "telephone": "+91-7677666677",
-  "address": {
-    "@type": "PostalAddress",
-    "streetAddress": "HS-33, Kailash Colony Market, Greater Kailash-1",
-    "addressLocality": "New Delhi",
-    "postalCode": "110048",
-    "addressCountry": "IN"
-  }
-}
-</script>`,
     status: "active"
   },
   {
@@ -115,7 +99,6 @@ const initialSEO = [
     keywords: "about visa for nation, immigration experts delhi, visa consultancy greater kailash",
     canonicalUrl: "https://visafornation.com/about",
     ogImage: "/logo.png",
-    customHeaderTags: "",
     status: "active"
   },
   {
@@ -126,7 +109,6 @@ const initialSEO = [
     keywords: "contact visa for nation, immigration office delhi, kailash colony visa consultant",
     canonicalUrl: "https://visafornation.com/contact-us",
     ogImage: "/logo.png",
-    customHeaderTags: "",
     status: "active"
   },
   {
@@ -137,7 +119,6 @@ const initialSEO = [
     keywords: "canada pr visa, express entry draw, pnp canada, canada immigration delhi",
     canonicalUrl: "https://visafornation.com/visa/pr/canada",
     ogImage: "/logo.png",
-    customHeaderTags: "",
     status: "active"
   },
   {
@@ -148,7 +129,6 @@ const initialSEO = [
     keywords: "australia pr, subclass 189, subclass 190, subclass 491, australia immigration delhi",
     canonicalUrl: "https://visafornation.com/visa/pr/australia",
     ogImage: "/logo.png",
-    customHeaderTags: "",
     status: "active"
   }
 ];
