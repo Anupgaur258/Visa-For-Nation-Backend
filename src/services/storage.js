@@ -197,6 +197,50 @@ export async function getInquiries({ category, country, status, q, page = 1, lim
    return { inquiries: paginatedItems, total, page: pageNum, limit: limitNum };
    }
 
+
+export async function getInquiryStats() {
+  if (dbState.isConnected) {
+    try {
+      const [totals, categories] = await Promise.all([
+        Inquiry.aggregate([
+          { $group: {
+            _id: null,
+            total: { $sum: 1 },
+            newCount: { $sum: { $cond: [{ $eq: ['$status', 'new'] }, 1, 0] } },
+          } },
+        ]),
+        Inquiry.aggregate([
+          { $group: { _id: { $ifNull: ['$category', 'General'] }, count: { $sum: 1 } } },
+        ]),
+      ]);
+      if (totals[0]?.total > 0) {
+        return {
+          totalInquiries: totals[0].total,
+          newInquiries: totals[0].newCount,
+          countsByCategory: categories.reduce((counts, row) => {
+            counts[row._id || 'General'] = row.count;
+            return counts;
+          }, {}),
+        };
+      }
+    } catch (e) {
+      console.warn('getInquiryStats DB error:', e.message);
+    }
+  }
+
+  const inquiries = readJSON('inquiries.json', []);
+  const countsByCategory = inquiries.reduce((counts, inquiry) => {
+    const category = inquiry.category || 'General';
+    counts[category] = (counts[category] || 0) + 1;
+    return counts;
+  }, {});
+  return {
+    totalInquiries: inquiries.length,
+    newInquiries: inquiries.filter(inquiry => inquiry.status === 'new').length,
+    countsByCategory,
+  };
+}
+
 export async function updateInquiry(id, updateData) {
   if (dbState.isConnected) {
     try {

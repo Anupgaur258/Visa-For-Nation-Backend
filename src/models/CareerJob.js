@@ -7,6 +7,7 @@ export const CareerJob = model('CareerJob', new Schema({
   description: { type: String, required: true },
   experience: String, // e.g., "2-5 years"
   position: String, // e.g., "Software Engineer"
+  department: String,
   role: String, // e.g., "Full-time"
   location: String,
   salary: String,

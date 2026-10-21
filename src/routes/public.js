@@ -70,6 +70,7 @@ r.get('/posts/:slug', wrap(async (req, res) => {
 r.post('/inquiries', wrap(async (req, res) => {
   const { name, phone, email, category, country, visaType, ageGroup, qualification, experience, languageScore, travelDate, intake, serviceNeeded, details, message, sourcePage } = req.body;
   if (!name || !phone) return res.status(400).json({ message: 'Name and phone are required' });
+  if (typeof email !== 'string' || !email.trim() || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ message: 'A valid email address is required for confirmation.' });
   
   const created = await createInquiry({
     name,
@@ -90,7 +91,17 @@ r.post('/inquiries', wrap(async (req, res) => {
     sourcePage: sourcePage || '',
   });
 
-  await emailService.sendInquiryNotification(created);
+  await emailService.sendSubmissionNotifications({
+    formName: 'Enquiry',
+    recipientEmail: created.email,
+    fields: {
+      Name: created.name, Phone: created.phone, Email: created.email, Category: created.category,
+      Country: created.country, 'Visa type': created.visaType, 'Age group': created.ageGroup,
+      Qualification: created.qualification, Experience: created.experience, 'Language score': created.languageScore,
+      'Travel date': created.travelDate, Intake: created.intake, 'Service needed': created.serviceNeeded,
+      Message: created.message, 'Additional details': created.details, 'Source page': created.sourcePage,
+    },
+  });
 
   res.status(201).json({ ok: true, id: created._id });
 }));
@@ -132,26 +143,70 @@ r.get('/career/jobs', wrap(async (_req, res) => {
   })));
 }));
 r.post('/career/apply', resumeUpload.single('resume'), wrap(async (req, res) => {
-  const { job, applicantName, email, phone, currentCtc, coverLetter } = req.body;
+  const { job, applicationType = 'job', applicantName, email, phone, currentCtc, coverLetter } = req.body;
+  const isGeneralApplication = applicationType === 'general' && !job;
   const discardResume = () => { if (req.file) fs.unlink(req.file.path, () => {}); };
-  if (!job || !applicantName?.trim() || !email?.trim() || !currentCtc?.trim() || !req.file) { discardResume(); return res.status(400).json({ message: 'Job, name, email, current CTC, and resume are required.' }); }
+  if ((!isGeneralApplication && !job) || !applicantName?.trim() || !email?.trim() || (!isGeneralApplication && !currentCtc?.trim()) || !phone?.trim() || !req.file) {
+    discardResume();
+    return res.status(400).json({ message: isGeneralApplication ? 'Name, email, phone, and resume are required.' : 'Job, name, email, phone, current CTC, and resume are required.' });
+  }
   if (applicantName.trim().length < 2 || applicantName.length > 100) { discardResume(); return res.status(400).json({ message: 'Please enter a name between 2 and 100 characters.' }); }
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { discardResume(); return res.status(400).json({ message: 'Please enter a valid email address.' }); }
-  if (!phone?.trim() || !/^[+0-9() .-]{7,24}$/.test(phone)) { discardResume(); return res.status(400).json({ message: 'Please enter a valid phone number.' }); }
-  if (String(currentCtc).length > 60) { discardResume(); return res.status(400).json({ message: 'Current CTC must be 60 characters or fewer.' }); }
+  if (isGeneralApplication ? !/^[0-9]{10}$/.test(phone) : !/^[+0-9() .-]{7,24}$/.test(phone)) { discardResume(); return res.status(400).json({ message: 'Please enter a valid phone number.' }); }
+  if (String(currentCtc || '').length > 60) { discardResume(); return res.status(400).json({ message: 'Current CTC must be 60 characters or fewer.' }); }
   if (String(coverLetter || '').length > 2000) { discardResume(); return res.status(400).json({ message: 'Cover note must be 2,000 characters or fewer.' }); }
-  const openJob = (await getAllCareerJobs()).find(item => String(item._id) === String(job) && item.status === 'open');
-  if (!openJob) { discardResume(); return res.status(404).json({ message: 'This position is no longer open.' }); }
-  const limit = getCareerApplicationLimit();
-  return withCareerApplicationLock(job, async () => {
-    const applicationCount = await getCareerApplicationCount(job);
-    if (applicationCount >= limit) {
-      discardResume();
-      return res.status(409).json({ message: 'Applications are full for this position. Thank you for your interest.' });
+  const openJob = isGeneralApplication ? null : (await getAllCareerJobs()).find(item => String(item._id) === String(job) && item.status === 'open');
+  if (!isGeneralApplication && !openJob) { discardResume(); return res.status(404).json({ message: 'This position is no longer open.' }); }
+
+  const submitApplication = async () => {
+    let applicationCount;
+    let applicationLimit;
+    if (!isGeneralApplication) {
+      applicationLimit = getCareerApplicationLimit();
+      applicationCount = await getCareerApplicationCount(job);
+      if (applicationCount >= applicationLimit) {
+        discardResume();
+        return res.status(409).json({ message: 'Applications are full for this position. Thank you for your interest.' });
+      }
     }
-    const application = await saveCareerApplication({ job, applicantName: applicantName.trim(), email: email.trim(), phone, currentCtc: String(currentCtc).trim(), coverLetter, resumeUrl: `/uploads/${req.file.filename}` });
+
+    const application = await saveCareerApplication({
+      ...(isGeneralApplication ? {} : { job }),
+      applicationType: isGeneralApplication ? 'general' : 'job',
+      applicantName: applicantName.trim(),
+      email: email.trim(),
+      phone,
+      currentCtc: String(currentCtc || '').trim(),
+      coverLetter,
+      resumeUrl: '/uploads/' + req.file.filename,
+    });
     if (!application) { discardResume(); return res.status(503).json({ message: 'Applications are temporarily unavailable.' }); }
-    return res.status(201).json({ ok: true, id: application._id, applicationCount: applicationCount + 1, applicationLimit: limit });
-  });
+
+    await emailService.sendSubmissionNotifications({
+      formName: isGeneralApplication ? 'General career interest' : 'Career application',
+      recipientEmail: application.email,
+      fields: {
+        Name: application.applicantName,
+        Email: application.email,
+        Phone: application.phone,
+        'Position applied for': openJob?.title || 'General interest - future opportunities',
+        Department: openJob?.department || '',
+        'Current CTC': application.currentCtc || 'Not provided',
+        'Cover note': application.coverLetter || '',
+        Resume: req.file.originalname,
+        'Application ID': application._id,
+      },
+      attachments: [{ filename: path.basename(req.file.originalname), path: req.file.path }],
+    });
+    const response = { ok: true, id: application._id };
+    if (!isGeneralApplication) {
+      response.applicationCount = applicationCount + 1;
+      response.applicationLimit = applicationLimit;
+    }
+    return res.status(201).json(response);
+  };
+
+  return isGeneralApplication ? submitApplication() : withCareerApplicationLock(job, submitApplication);
 }));
+
 export default r;

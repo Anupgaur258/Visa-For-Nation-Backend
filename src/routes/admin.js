@@ -7,6 +7,7 @@ import auth from '../middleware/auth.js';
 import {
   verifyAdmin,
   getInquiries,
+  getInquiryStats,
   updateInquiry,
   deleteInquiry,
   getAllPages,
@@ -72,33 +73,22 @@ r.use(auth);
 /*  STATS                                                                     */
 /* ========================================================================== */
 r.get('/stats', wrap(async (_q, res) => {
-  const inquiries = await getInquiries();
-  const pages = await getAllPages();
-  const posts = await getAllPostsAdmin();
-  const seo = await getAllSEO();
-
-  const countsByCategory = inquiries.reduce((acc, i) => {
-    const cat = i.category || 'General';
-    acc[cat] = (acc[cat] || 0) + 1;
-    return acc;
-  }, {});
-
-  const newInquiries = inquiries.filter(i => i.status === 'new').length;
+  const [inquiryStats, pages, posts, seo] = await Promise.all([
+    getInquiryStats(),
+    getAllPages(),
+    getAllPostsAdmin(),
+    getAllSEO(),
+  ]);
 
   res.json({
-    totalInquiries: inquiries.length,
-    newInquiries,
-    countsByCategory,
+    ...inquiryStats,
     pages: pages.length,
     posts: posts.length,
     seo: seo.length,
   });
 }));
 
-/* ========================================================================== */
-/*  TAB 1: FORM INQUIRIES                                                     */
-/* ========================================================================== */
-    r.get('/inquiries', wrap(async (req, res) => {
+r.get('/inquiries', wrap(async (req, res) => {
       const { category, country, status, q, page = 1, limit } = req.query;
       const result = await getInquiries({ category, country, status, q, page, limit });
       res.json(result);
