@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { getPage, getAllPages, getCMSContent, getSEO, getPosts, getPostBySlug, createInquiry, saveCMSSection, getAllCareerJobs, saveCareerApplication, getAllTestimonials, likeTestimonial, getAllBanners, getAllReels, getAllReviews, getAllTeamImages, getCareerApplicationCount } from '../services/storage.js';
+import { getPage, getAllPages, getCMSContent, getSEO, getPosts, getPostBySlug, getPodcasts, createInquiry, saveCMSSection, getAllCareerJobs, saveCareerApplication, getAllTestimonials, likeTestimonial, getAllBanners, getAllReels, getAllReviews, getAllTeamImages, getCareerApplicationCount } from '../services/storage.js';
 import emailService from '../services/emailService.js';
 
 const r = Router();
@@ -64,6 +64,21 @@ r.get('/posts/:slug', wrap(async (req, res) => {
   const result = await getPostBySlug(req.params.slug);
   if (!result) return res.status(404).json({ message: 'Post not found' });
   res.json(result);
+}));
+
+// News articles are stored separately from blog posts and use the same article format.
+r.get('/news', wrap(async (req, res) => {
+  res.json(await getPosts(req.query.category, 'news'));
+}));
+
+r.get('/news/:slug', wrap(async (req, res) => {
+  const result = await getPostBySlug(req.params.slug, 'news');
+  if (!result) return res.status(404).json({ message: 'News article not found' });
+  res.json(result);
+}));
+
+r.get('/podcasts', wrap(async (_req, res) => {
+  res.json(await getPodcasts());
 }));
 
 // Inquiries submission
