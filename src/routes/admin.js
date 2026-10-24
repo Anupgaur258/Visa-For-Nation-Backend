@@ -28,13 +28,15 @@ import {
   getAllTeamImages, saveTeamImage, deleteTeamImage,
   getAllCareerJobs, saveCareerJob, deleteCareerJob,
   getAllCareerApplications, deleteCareerApplication,
+  getAllPodcastsAdmin, savePodcast, deletePodcast,
 } from '../services/storage.js';
 
 const r = Router();
 const wrap = fn => (req, res, next) => fn(req, res).catch(next);
 const itemLimit = (name, fallback) => Math.max(0, Number(process.env[name] || fallback));
+const configuredPodcastLimit = Number(process.env.PODCAST_MAX_COUNT || 20);
 const awardSectionLimit = itemLimit('AWARD_SECTION_MAX_COUNT', 20);
-const contentLimits = { posts: itemLimit('BLOG_MAX_COUNT', 30), banners: itemLimit('BANNER_MAX_COUNT', 20), reels: itemLimit('REEL_MAX_COUNT', 20), testimonials: itemLimit('TESTIMONIAL_MAX_COUNT', 20), reviews: itemLimit('REVIEW_MAX_COUNT', 20), teamImages: itemLimit('TEAM_IMAGE_MAX_COUNT', 20) };
+const contentLimits = { posts: itemLimit('BLOG_MAX_COUNT', 30), news: itemLimit('NEWS_MAX_COUNT', 30), podcasts: Number.isFinite(configuredPodcastLimit) ? Math.max(0, Math.floor(configuredPodcastLimit)) : 20, banners: itemLimit('BANNER_MAX_COUNT', 20), reels: itemLimit('REEL_MAX_COUNT', 20), testimonials: itemLimit('TESTIMONIAL_MAX_COUNT', 20), reviews: itemLimit('REVIEW_MAX_COUNT', 20), teamImages: itemLimit('TEAM_IMAGE_MAX_COUNT', 20) };
 
 // Ensure uploads directory exists
 const uploadsDir = path.resolve('uploads');
@@ -89,8 +91,10 @@ r.get('/stats', wrap(async (_q, res) => {
 }));
 
 r.get('/inquiries', wrap(async (req, res) => {
-      const { category, country, status, q, page = 1, limit } = req.query;
-      const result = await getInquiries({ category, country, status, q, page, limit });
+      const { category, country, status, q, page = 1, limit, dateFrom, dateTo } = req.query;
+      const isDate = value => { if (!value) return true; if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false; const date = new Date(`${value}T00:00:00.000Z`); return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value; };
+      if (!isDate(dateFrom) || !isDate(dateTo) || (dateFrom && dateTo && dateFrom > dateTo)) return res.status(400).json({ message: 'Choose a valid date range.' });
+      const result = await getInquiries({ category, country, status, q, page, limit, dateFrom, dateTo });
       res.json(result);
     }));
 
@@ -156,6 +160,32 @@ r.delete('/posts/:id', wrap(async (req, res) => {
   await deletePost(req.params.id);
   res.json({ ok: true });
 }));
+
+r.get('/news', wrap(async (_req, res) => {
+  res.json(await getAllPostsAdmin('news'));
+}));
+
+r.post('/news', wrap(async (req, res) => {
+  if (!req.body._id && (await getAllPostsAdmin('news')).length >= contentLimits.news) return res.status(400).json({ message: 'You can add up to ' + contentLimits.news + ' news articles.' });
+  res.status(201).json(await savePost(req.body, 'news'));
+}));
+
+r.put('/news/:id', wrap(async (req, res) => {
+  res.json(await savePost({ ...req.body, _id: req.params.id }, 'news'));
+}));
+
+r.delete('/news/:id', wrap(async (req, res) => {
+  await deletePost(req.params.id, 'news');
+  res.json({ ok: true });
+}));
+
+r.get('/podcasts', wrap(async (_req, res) => { res.json(await getAllPodcastsAdmin()); }));
+r.post('/podcasts', wrap(async (req, res) => {
+  if ((await getAllPodcastsAdmin()).length >= contentLimits.podcasts) return res.status(400).json({ message: 'You can add up to ' + contentLimits.podcasts + ' podcasts.' });
+  res.status(201).json(await savePodcast(req.body));
+}));
+r.put('/podcasts/:id', wrap(async (req, res) => { res.json(await savePodcast({ ...req.body, _id: req.params.id })); }));
+r.delete('/podcasts/:id', wrap(async (req, res) => { await deletePodcast(req.params.id); res.json({ ok: true }); }));
 
 // Image Upload (Multer)
 r.post('/upload', upload.single('file'), (req, res) => {

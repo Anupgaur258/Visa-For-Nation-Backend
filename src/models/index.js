@@ -19,6 +19,7 @@ export const Page = model('Page', new Schema({
 }, opts));
 
 export const Post = model('Post', new Schema({
+  contentType: { type: String, enum: ['blog', 'news'], default: 'blog', index: true },
   title: { type: String, required: true },
   slug: { type: String, unique: true },
   image: String,
@@ -29,6 +30,11 @@ export const Post = model('Post', new Schema({
   metaDescription: String,
   views: { type: Number, default: 0 },
   status: { type: String, enum: ['draft', 'published'], default: 'published' },
+}, opts));
+
+export const Podcast = model('Podcast', new Schema({
+  title: { type: String, required: true, trim: true, minlength: 3, maxlength: 120 },
+  url: { type: String, required: true, trim: true, maxlength: 1000 },
 }, opts));
 
 export const Inquiry = model('Inquiry', new Schema({
