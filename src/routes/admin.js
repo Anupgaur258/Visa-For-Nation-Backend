@@ -35,19 +35,21 @@ const r = Router();
 const wrap = fn => (req, res, next) => fn(req, res).catch(next);
 const itemLimit = (name, fallback) => Math.max(0, Number(process.env[name] || fallback));
 const configuredPodcastLimit = Number(process.env.PODCAST_MAX_COUNT || 20);
+const configuredBannerLimit = Number(process.env.BANNER_MAX_COUNT || 5);
 const awardSectionLimit = itemLimit('AWARD_SECTION_MAX_COUNT', 20);
-const contentLimits = { posts: itemLimit('BLOG_MAX_COUNT', 30), news: itemLimit('NEWS_MAX_COUNT', 30), podcasts: Number.isFinite(configuredPodcastLimit) ? Math.max(0, Math.floor(configuredPodcastLimit)) : 20, banners: itemLimit('BANNER_MAX_COUNT', 20), reels: itemLimit('REEL_MAX_COUNT', 20), testimonials: itemLimit('TESTIMONIAL_MAX_COUNT', 20), reviews: itemLimit('REVIEW_MAX_COUNT', 20), teamImages: itemLimit('TEAM_IMAGE_MAX_COUNT', 20) };
+const contentLimits = { posts: itemLimit('BLOG_MAX_COUNT', 30), news: itemLimit('NEWS_MAX_COUNT', 30), podcasts: Number.isFinite(configuredPodcastLimit) ? Math.max(0, Math.floor(configuredPodcastLimit)) : 20, banners: Number.isFinite(configuredBannerLimit) ? Math.min(5, Math.max(0, Math.floor(configuredBannerLimit))) : 5, reels: itemLimit('REEL_MAX_COUNT', 20), testimonials: itemLimit('TESTIMONIAL_MAX_COUNT', 20), reviews: itemLimit('REVIEW_MAX_COUNT', 20), teamImages: itemLimit('TEAM_IMAGE_MAX_COUNT', 20) };
 
-// Ensure uploads directory exists
 const uploadsDir = path.resolve('uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+const uploadCategories = new Set(['banner', 'blogs', 'news', 'team', 'awards', 'general']);
 
-// Multer storage
 const upload = multer({
   storage: multer.diskStorage({
-    destination: 'uploads',
+    destination: (req, _file, cb) => {
+      const category = String(req.body.category || 'general').toLowerCase();
+      if (!uploadCategories.has(category)) return cb(new Error('Invalid upload category.'));
+      const categoryDir = path.join(uploadsDir, category);
+      fs.mkdir(categoryDir, { recursive: true }, error => cb(error, categoryDir));
+    },
     filename: (_q, f, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1e6) + path.extname(f.originalname).toLowerCase()),
   }),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
@@ -190,7 +192,8 @@ r.delete('/podcasts/:id', wrap(async (req, res) => { await deletePodcast(req.par
 // Image Upload (Multer)
 r.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Image file required' });
-  res.json({ path: `uploads/${req.file.filename}` });
+  const category = String(req.body.category || 'general').toLowerCase();
+  res.json({ path: `uploads/${category}/${req.file.filename}` });
 });
 
 /* ========================================================================== */
@@ -245,7 +248,9 @@ r.get('/banner', wrap(async (_req, res) => {
 }));
 r.post('/banner', wrap(async (req, res) => {
   if (!req.body._id && (await getAllBanners()).length >= contentLimits.banners) return res.status(400).json({ message: 'Banner limit reached (' + contentLimits.banners + ').' });
-  res.json(await saveBanner(req.body));
+  const saved = await saveBanner(req.body);
+  if (!saved) return res.status(503).json({ message: 'Could not save the banner. Check the database connection and try again.' });
+  res.json(saved);
 }));
 r.delete('/banner/:id', wrap(async (req, res) => {
   await deleteBanner(req.params.id);
@@ -331,4 +336,3 @@ r.delete('/career/application/:id', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 export default r;
-
