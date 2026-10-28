@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { dbState } from '../config/db.js';
-import { Page, Post, Inquiry, CMSContent, SEOMetadata, Admin, Banner, Reel, Testimonial, Review, TeamImage, CareerJob, CareerApplication, Podcast } from '../models/index.js';
+import { Page, Post, Inquiry, ChatSession, CMSContent, SEOMetadata, Admin, Banner, Reel, Testimonial, Review, TeamImage, CareerJob, CareerApplication, Podcast } from '../models/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -253,6 +253,64 @@ export async function getInquiryStats() {
     newInquiries: inquiries.filter(inquiry => inquiry.status === 'new').length,
     countsByCategory,
   };
+}
+
+export async function getChatAvailability() {
+  const state = readJSON('chatbot-state.json', { online: false });
+  return { online: state.online === true, activeVisitorId: state.activeVisitorId || '', busy: Boolean(state.activeVisitorId), available: state.online === true && !state.activeVisitorId };
+}
+
+export async function setChatAvailability(online) {
+  const previous = readJSON('chatbot-state.json', { online: false });
+  const state = { ...previous, online: online === true, ...(online ? {} : { activeVisitorId: '' }), updatedAt: new Date().toISOString() };
+  writeJSON('chatbot-state.json', state);
+  return { online: state.online, activeVisitorId: state.activeVisitorId || '', busy: Boolean(state.activeVisitorId), available: state.online && !state.activeVisitorId };
+}
+
+export async function claimChatSession(visitorId) {
+  const state = readJSON('chatbot-state.json', { online: false });
+  if (!state.online) return { ok: false, reason: 'offline' };
+  if (state.activeVisitorId && state.activeVisitorId !== visitorId) return { ok: false, reason: 'busy' };
+  state.activeVisitorId = visitorId;
+  state.updatedAt = new Date().toISOString();
+  writeJSON('chatbot-state.json', state);
+  return { ok: true, activeVisitorId: visitorId };
+}
+
+export async function releaseChatSession(visitorId) {
+  const state = readJSON('chatbot-state.json', { online: false });
+  if (state.activeVisitorId !== visitorId) return false;
+  state.activeVisitorId = '';
+  state.updatedAt = new Date().toISOString();
+  writeJSON('chatbot-state.json', state);
+  return true;
+}
+
+export async function getChatSessions() {
+  if (dbState.isConnected) {
+    try { return await ChatSession.find().sort('-updatedAt').lean(); } catch (e) { console.warn('getChatSessions DB error:', e.message); }
+  }
+  return readJSON('chat-sessions.json', []).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
+export async function getChatSession(visitorId) {
+  if (dbState.isConnected) {
+    try { const session = await ChatSession.findOne({ visitorId }).lean(); if (session) return session; } catch (e) { console.warn('getChatSession DB error:', e.message); }
+  }
+  return readJSON('chat-sessions.json', []).find(item => item.visitorId === visitorId) || null;
+}
+
+export async function saveChatSession(sessionData) {
+  const session = { ...sessionData, updatedAt: new Date().toISOString() };
+  if (dbState.isConnected) {
+    try { return await ChatSession.findOneAndUpdate({ visitorId: session.visitorId }, session, { new: true, upsert: true, runValidators: true }).lean(); } catch (e) { console.warn('saveChatSession DB error:', e.message); }
+  }
+  const sessions = readJSON('chat-sessions.json', []);
+  const index = sessions.findIndex(item => item.visitorId === session.visitorId);
+  if (index >= 0) sessions[index] = { ...sessions[index], ...session };
+  else sessions.unshift(session);
+  writeJSON('chat-sessions.json', sessions);
+  return index >= 0 ? sessions[index] : session;
 }
 
 export async function updateInquiry(id, updateData) {
@@ -515,40 +573,68 @@ export async function verifyAdmin(email, password) {
 // ==========================================================================
 
 export async function getAllBanners() {
+  const localBanners = readJSON('banners.json', []);
   if (dbState.isConnected) {
     try {
-      return await Banner.find().sort({ displayOrder: 1 });
+      const databaseBanners = await Banner.find().sort({ displayOrder: 1 });
+      const databaseIds = new Set(databaseBanners.map(item => String(item._id)));
+      return [...databaseBanners, ...localBanners.filter(item => !databaseIds.has(String(item._id)))]
+        .sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
     } catch (e) {
       console.warn('getAllBanners DB error:', e.message);
     }
   }
-  return [];
+  return localBanners.slice().sort((a, b) => (Number(a.displayOrder) || 0) - (Number(b.displayOrder) || 0));
 }
 
 export async function saveBanner(bannerData) {
   if (dbState.isConnected) {
     try {
-      if (bannerData._id) {
-        return await Banner.findByIdAndUpdate(bannerData._id, bannerData, { new: true, runValidators: true });
-      } else {
-        return await Banner.create(bannerData);
+      const saved = bannerData._id
+        ? await Banner.findByIdAndUpdate(bannerData._id, bannerData, { new: true, runValidators: true })
+        : await Banner.create(bannerData);
+      if (saved) {
+        const localBanners = readJSON('banners.json', []);
+        const index = localBanners.findIndex(item => String(item._id) === String(saved._id));
+        const serialized = saved.toObject ? saved.toObject() : saved;
+        if (index >= 0) localBanners[index] = serialized;
+        else localBanners.push(serialized);
+        writeJSON('banners.json', localBanners);
+        return saved;
       }
     } catch (e) {
       console.warn('saveBanner DB error:', e.message);
     }
   }
-  return null;
+  const localBanners = readJSON('banners.json', []);
+  const index = localBanners.findIndex(item => String(item._id) === String(bannerData._id));
+  const now = new Date().toISOString();
+  const saved = {
+    ...(index >= 0 ? localBanners[index] : {}),
+    ...bannerData,
+    _id: bannerData._id || `banner_${Date.now()}`,
+    updatedAt: now,
+    createdAt: index >= 0 ? localBanners[index].createdAt : now,
+  };
+  if (index >= 0) localBanners[index] = saved;
+  else localBanners.push(saved);
+  writeJSON('banners.json', localBanners);
+  return saved;
 }
 
 export async function deleteBanner(id) {
+  let deleted = null;
   if (dbState.isConnected) {
     try {
-      return await Banner.findByIdAndDelete(id);
+      deleted = await Banner.findByIdAndDelete(id);
     } catch (e) {
       console.warn('deleteBanner DB error:', e.message);
     }
   }
-  return null;
+  const localBanners = readJSON('banners.json', []);
+  const remaining = localBanners.filter(item => String(item._id) !== String(id));
+  if (remaining.length !== localBanners.length) writeJSON('banners.json', remaining);
+  return deleted || (remaining.length !== localBanners.length ? { _id: id } : null);
 }
 
 // Reel
@@ -816,9 +902,11 @@ const podcastUrlIsSupported = value => {
 const validatePodcast = data => {
   const title = String(data.title || '').trim();
   const url = String(data.url || '').trim();
+  const thumbnailUrl = String(data.thumbnailUrl || '').trim();
   if (title.length < 3 || title.length > 120) throw Object.assign(new Error('Podcast title must be 3 to 120 characters.'), { status: 400 });
   if (url.length > 1000 || !podcastUrlIsSupported(url)) throw Object.assign(new Error('Enter a supported YouTube, Spotify episode, Apple Podcasts, or SoundCloud link.'), { status: 400 });
-  return { title, url };
+  if (thumbnailUrl.length > 500) throw Object.assign(new Error('Thumbnail path is too long.'), { status: 400 });
+  return { title, url, thumbnailUrl };
 };
 export async function getPodcasts() {
   const limit = podcastLimit();

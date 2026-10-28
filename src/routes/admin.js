@@ -29,6 +29,7 @@ import {
   getAllCareerJobs, saveCareerJob, deleteCareerJob,
   getAllCareerApplications, deleteCareerApplication,
   getAllPodcastsAdmin, savePodcast, deletePodcast,
+  getChatAvailability, setChatAvailability, getChatSessions, getChatSession, saveChatSession, releaseChatSession,
 } from '../services/storage.js';
 
 const r = Router();
@@ -40,7 +41,7 @@ const awardSectionLimit = itemLimit('AWARD_SECTION_MAX_COUNT', 20);
 const contentLimits = { posts: itemLimit('BLOG_MAX_COUNT', 30), news: itemLimit('NEWS_MAX_COUNT', 30), podcasts: Number.isFinite(configuredPodcastLimit) ? Math.max(0, Math.floor(configuredPodcastLimit)) : 20, banners: Number.isFinite(configuredBannerLimit) ? Math.min(5, Math.max(0, Math.floor(configuredBannerLimit))) : 5, reels: itemLimit('REEL_MAX_COUNT', 20), testimonials: itemLimit('TESTIMONIAL_MAX_COUNT', 20), reviews: itemLimit('REVIEW_MAX_COUNT', 20), teamImages: itemLimit('TEAM_IMAGE_MAX_COUNT', 20) };
 
 const uploadsDir = path.resolve('uploads');
-const uploadCategories = new Set(['banner', 'blogs', 'news', 'team', 'awards', 'general']);
+const uploadCategories = new Set(['banner', 'blogs', 'news', 'team', 'awards', 'general', 'podcast-thumbnails']);
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -54,6 +55,17 @@ const upload = multer({
   }),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (_q, f, cb) => cb(null, /^image\//.test(f.mimetype)),
+});
+const videoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      const categoryDir = path.join(uploadsDir, 'testimonials');
+      fs.mkdir(categoryDir, { recursive: true }, error => cb(error, categoryDir));
+    },
+    filename: (_req, file, cb) => cb(null, `video-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname).toLowerCase()}`),
+  }),
+  limits: { fileSize: Math.max(1, Number(process.env.TESTIMONIAL_VIDEO_MAX_MB || 100)) * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, /^video\/(mp4|webm|quicktime)$/.test(file.mimetype)),
 });
 
 /* ========================================================================== */
@@ -72,6 +84,25 @@ r.post('/login', wrap(async (req, res) => {
 
 // Protect all routes below with auth middleware
 r.use(auth);
+
+r.get('/chatbot/status', wrap(async (_req, res) => res.json(await getChatAvailability())));
+r.put('/chatbot/status', wrap(async (req, res) => res.json(await setChatAvailability(req.body?.online === true))));
+r.get('/chatbot/sessions', wrap(async (_req, res) => res.json(await getChatSessions())));
+r.post('/chatbot/sessions/:visitorId/messages', wrap(async (req, res) => {
+  const cleanText = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!/^[a-zA-Z0-9-]{20,80}$/.test(req.params.visitorId) || !cleanText || cleanText.length > 1000) return res.status(400).json({ message: 'Enter a message up to 1000 characters.' });
+  const existing = await getChatSession(req.params.visitorId);
+  if (!existing) return res.status(404).json({ message: 'Chat session not found.' });
+  const status = await getChatAvailability();
+  if (status.activeVisitorId !== req.params.visitorId) return res.status(409).json({ message: 'This conversation is no longer active. Select the current visitor.' });
+  const messages = [...(existing.messages || []), { role: 'admin', text: cleanText, at: new Date().toISOString() }].slice(-200);
+  res.json(await saveChatSession({ ...existing, messages }));
+}));
+r.post('/chatbot/sessions/:visitorId/end', wrap(async (req, res) => {
+  const ended = await releaseChatSession(req.params.visitorId);
+  if (!ended) return res.status(409).json({ message: 'This is not the active conversation.' });
+  res.json({ ok: true });
+}));
 
 /* ========================================================================== */
 /*  STATS                                                                     */
@@ -194,6 +225,12 @@ r.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Image file required' });
   const category = String(req.body.category || 'general').toLowerCase();
   res.json({ path: `uploads/${category}/${req.file.filename}` });
+});
+
+// Admin uploaded testimonial videos
+r.post('/upload-video', videoUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'Choose an MP4, WebM, or MOV video.' });
+  res.json({ path: `/uploads/testimonials/${req.file.filename}` });
 });
 
 /* ========================================================================== */

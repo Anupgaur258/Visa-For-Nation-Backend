@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { getPage, getAllPages, getCMSContent, getSEO, getPosts, getPostBySlug, getPodcasts, createInquiry, saveCMSSection, getAllCareerJobs, saveCareerApplication, getAllTestimonials, likeTestimonial, getAllBanners, getAllReels, getAllReviews, getAllTeamImages, getCareerApplicationCount } from '../services/storage.js';
+import { getPage, getAllPages, getCMSContent, getSEO, getPosts, getPostBySlug, getPodcasts, createInquiry, saveCMSSection, getAllCareerJobs, saveCareerApplication, getAllTestimonials, likeTestimonial, getAllBanners, getAllReels, getAllReviews, getAllTeamImages, getCareerApplicationCount, getChatAvailability, getChatSession, saveChatSession, claimChatSession } from '../services/storage.js';
 import emailService from '../services/emailService.js';
 
 const r = Router();
@@ -170,8 +170,51 @@ r.post('/chatbot/message', (req, res) => {
   res.json({ answer: getChatbotAnswer(message) });
 });
 
+r.get('/chatbot/status', wrap(async (_req, res) => {
+  const { online, busy, available } = await getChatAvailability();
+  res.json({ online, busy, available });
+}));
+
+r.post('/chatbot/session', wrap(async (req, res) => {
+  const { visitorId, details, messages = [] } = req.body || {};
+  if (typeof visitorId !== 'string' || !/^[a-zA-Z0-9-]{20,80}$/.test(visitorId)) return res.status(400).json({ message: 'Invalid chat session.' });
+  const safeDetails = details && typeof details === 'object' ? {
+    name: String(details.name || '').trim().slice(0, 100), phone: String(details.phone || '').trim().slice(0, 20),
+    email: String(details.email || '').trim().slice(0, 254), country: String(details.country || '').trim().slice(0, 100),
+    visaType: String(details.visaType || details.topic || '').trim().slice(0, 100),
+  } : {};
+  if (safeDetails.name.length < 2 || !/^\+?[0-9\s().-]{7,20}$/.test(safeDetails.phone) || safeDetails.phone.replace(/\D/g, '').length < 7 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(safeDetails.email) || !safeDetails.country || !safeDetails.visaType) return res.status(400).json({ message: 'Complete your name, mobile, email, country and visa type before starting a live chat.' });
+  const claim = await claimChatSession(visitorId);
+  if (!claim.ok) return res.status(409).json({ message: claim.reason === 'busy' ? 'The advisor is helping another visitor right now. Please request a call instead.' : 'The advisor is offline right now. Please request a call.' });
+  const existingMessages = (await getChatSession(visitorId))?.messages || [];
+  const safeMessages = Array.isArray(messages) ? messages.slice(-50).filter(item => ['user', 'assistant'].includes(item?.role) && typeof item.text === 'string').map(item => ({ role: item.role === 'assistant' ? 'admin' : 'user', text: item.text.slice(0, 1000), at: new Date().toISOString() })) : [];
+  const saved = await saveChatSession({ visitorId, details: safeDetails, messages: existingMessages.length ? existingMessages : safeMessages });
+  res.json({ visitorId, messages: saved.messages || [] });
+}));
+
+r.get('/chatbot/session/:visitorId', wrap(async (req, res) => {
+  if (!/^[a-zA-Z0-9-]{20,80}$/.test(req.params.visitorId)) return res.status(400).json({ message: 'Invalid chat session.' });
+  const session = await getChatSession(req.params.visitorId);
+  const status = await getChatAvailability();
+  res.json({ messages: session?.messages || [], online: status.online, busy: status.busy, available: status.available, active: status.activeVisitorId === req.params.visitorId });
+}));
+
+r.post('/chatbot/session/:visitorId/messages', wrap(async (req, res) => {
+  const { text } = req.body || {};
+  const cleanText = typeof text === 'string' ? text.trim() : '';
+  if (!/^[a-zA-Z0-9-]{20,80}$/.test(req.params.visitorId) || !cleanText || cleanText.length > 1000) return res.status(400).json({ message: 'Enter a message up to 1000 characters.' });
+  const status = await getChatAvailability();
+  if (!status.online) return res.status(409).json({ message: 'The advisor is offline right now.' });
+  if (status.activeVisitorId !== req.params.visitorId) return res.status(409).json({ message: 'The advisor is currently helping another visitor.' });
+  const existing = await getChatSession(req.params.visitorId);
+  if (!existing) return res.status(404).json({ message: 'Chat session not found.' });
+  const messages = [...(existing.messages || []), { role: 'user', text: cleanText, at: new Date().toISOString() }].slice(-200);
+  await saveChatSession({ ...existing, messages });
+  res.json({ ok: true, messages });
+}));
+
 r.post('/chatbot/leads', wrap(async (req, res) => {
-  const { name, phone, email, topic, message, sourcePage, consent } = req.body || {};
+  const { name, phone, email, topic, country, message, sourcePage, consent, callDate, callTime } = req.body || {};
   const cleanName = typeof name === 'string' ? name.trim() : '';
   const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
   const cleanEmail = typeof email === 'string' ? email.trim() : '';
@@ -197,6 +240,13 @@ r.post('/chatbot/leads', wrap(async (req, res) => {
     return res.status(400).json({ message: 'Consent is required before we can contact you.' });
   }
 
+  const cleanCountry = typeof country === 'string' ? country.trim().slice(0, 100) : '';
+  const isCallRequest = Boolean(callDate || callTime);
+  if (isCallRequest && (!/^\d{4}-\d{2}-\d{2}$/.test(callDate || '') || !/^([01]\d|2[0-3]):[0-5]\d$/.test(callTime || '') || new Date(`${callDate}T${callTime}:00`).getTime() <= Date.now())) {
+    return res.status(400).json({ message: 'Choose a future date and a valid call time.' });
+  }
+  if (!cleanCountry) return res.status(400).json({ message: 'Choose your country.' });
+
   const cleanSourcePage = typeof sourcePage === 'string' && /^\/(?!\/)/.test(sourcePage)
     ? sourcePage.slice(0, 200)
     : '/';
@@ -205,7 +255,7 @@ r.post('/chatbot/leads', wrap(async (req, res) => {
     phone: cleanPhone,
     email: cleanEmail,
     category: 'Chatbot',
-    country: '',
+    country: cleanCountry,
     visaType: cleanTopic,
     ageGroup: '',
     qualification: '',
@@ -214,19 +264,21 @@ r.post('/chatbot/leads', wrap(async (req, res) => {
     travelDate: '',
     intake: '',
     serviceNeeded: cleanTopic,
-    details: { source: 'chatbot' },
+    details: { source: 'chatbot', requestType: isCallRequest ? 'scheduled_call' : 'contact', callDate: callDate || '', callTime: callTime || '', callDay: callDate ? new Date(`${callDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' }) : '' },
     message: cleanMessage || `Chatbot contact request: ${cleanTopic}`,
     sourcePage: cleanSourcePage,
   });
 
   await emailService.sendSubmissionNotifications({
-    formName: 'Chatbot contact request',
+    formName: isCallRequest ? 'Chatbot call request' : 'Chatbot contact request',
     recipientEmail: created.email,
     fields: {
       Name: created.name,
       Phone: created.phone,
       Email: created.email,
       Topic: created.serviceNeeded,
+      Country: created.country,
+      ...(isCallRequest ? { 'Call date': callDate, 'Call day': created.details.callDay, 'Call time': callTime } : {}),
       Message: created.message,
       'Source page': created.sourcePage,
     },
