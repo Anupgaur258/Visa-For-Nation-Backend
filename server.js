@@ -19,7 +19,12 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
-app.use('/uploads', express.static(path.resolve('uploads')));
+const uploadsRoot = path.resolve('uploads');
+app.get('/uploads/:filename', (req, res, next) => {
+	const filename = path.basename(req.params.filename);
+	res.sendFile(path.join(uploadsRoot, 'legacy', filename), error => { if (error) next(); });
+});
+app.use('/uploads', express.static(uploadsRoot));
 app.use('/api', publicRoutes);
 app.use('/api/admin', adminRoutes);
 app.use((err, _req, res, _next) => { console.error(err); res.status(err.status || 500).json({ message: err.message || 'Server error' }); });

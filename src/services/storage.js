@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { dbState } from '../config/db.js';
-import { Page, Post, Inquiry, CMSContent, SEOMetadata, Admin, Banner, Reel, Testimonial, Review, TeamImage, CareerJob, CareerApplication, Podcast } from '../models/index.js';
+import { Page, Post, Inquiry, ChatSession, ChatbotState, CMSContent, SEOMetadata, Admin, Banner, Reel, Testimonial, Review, TeamImage, CareerJob, CareerApplication, Podcast } from '../models/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,13 +25,8 @@ const readJSON = (filename, defaultVal = []) => {
   return defaultVal;
 };
 
-const writeJSON = (filename, data) => {
-  const filePath = path.join(DATA_DIR, filename);
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-  } catch (e) {
-    console.error(`Error writing ${filename}:`, e.message);
-  }
+const requireMongoForContent = () => {
+  if (!dbState.isConnected) throw Object.assign(new Error('MongoDB is not connected. Data was not saved. Please try again when the database is available.'), { status: 503 });
 };
 
 /* ========================================================================== */
@@ -40,12 +35,7 @@ const writeJSON = (filename, data) => {
 export async function getPage(fullUrl) {
   const cleanUrl = String(fullUrl || '').replace(/^\/+|\/+$/g, '');
   if (dbState.isConnected) {
-    try {
-      const page = await Page.findOne({ fullUrl: cleanUrl, status: 'published' });
-      if (page) return page;
-    } catch (e) {
-      console.warn('Page findOne error:', e.message);
-    }
+    return Page.findOne({ fullUrl: cleanUrl, status: 'published' });
   }
   const pages = readJSON('pages.json', []);
   return pages.find(p => p.fullUrl.replace(/^\/+|\/+$/g, '').toLowerCase() === cleanUrl.toLowerCase()) || null;
@@ -53,85 +43,37 @@ export async function getPage(fullUrl) {
 
 export async function getAllPages() {
   if (dbState.isConnected) {
-    try {
-      const pages = await Page.find().sort('heroTitle');
-      if (pages.length > 0) return pages;
-    } catch (e) {
-      console.warn('getAllPages error:', e.message);
-    }
+    return Page.find().sort('heroTitle');
   }
   return readJSON('pages.json', []);
 }
 
 export async function savePage(pageData) {
-  const pages = readJSON('pages.json', []);
+  requireMongoForContent();
   const cleanUrl = String(pageData.fullUrl || '').replace(/^\/+|\/+$/g, '');
   pageData.fullUrl = cleanUrl;
-
-  let saved = null;
-  if (dbState.isConnected) {
-    try {
-      if (pageData._id && String(pageData._id).length === 24) {
-        saved = await Page.findByIdAndUpdate(pageData._id, pageData, { new: true, runValidators: true });
-      } else {
-        saved = await Page.findOneAndUpdate({ fullUrl: cleanUrl }, pageData, { new: true, upsert: true });
-      }
-    } catch (e) {
-      console.warn('savePage DB error:', e.message);
-    }
-  }
-
-  // Update in JSON file
-  const idx = pages.findIndex(p => p.fullUrl.toLowerCase() === cleanUrl.toLowerCase() || (pageData._id && String(p._id) === String(pageData._id)));
-  if (idx >= 0) {
-    pages[idx] = { ...pages[idx], ...pageData, updatedAt: new Date().toISOString() };
-    saved = saved || pages[idx];
-  } else {
-    const newPage = { _id: pageData._id || 'page_' + Date.now(), ...pageData, createdAt: new Date().toISOString() };
-    pages.push(newPage);
-    saved = saved || newPage;
-  }
-  writeJSON('pages.json', pages);
+  const saved = pageData._id && /^[a-f\d]{24}$/i.test(String(pageData._id))
+    ? await Page.findByIdAndUpdate(pageData._id, pageData, { new: true, runValidators: true })
+    : await Page.findOneAndUpdate({ fullUrl: cleanUrl }, pageData, { new: true, upsert: true, runValidators: true });
+  if (!saved) throw Object.assign(new Error('Page was not found and could not be saved.'), { status: 404 });
   return saved;
 }
 
 export async function deletePage(id) {
-  if (dbState.isConnected) {
-    try {
-      await Page.findByIdAndDelete(id);
-    } catch (e) {}
-  }
-  let pages = readJSON('pages.json', []);
-  pages = pages.filter(p => String(p._id) !== String(id) && p.fullUrl !== String(id));
-  writeJSON('pages.json', pages);
-  return { ok: true };
+  requireMongoForContent();
+  return await Page.findByIdAndDelete(id);
 }
 
 /* ========================================================================== */
 /*  INQUIRIES                                                                 */
 /* ========================================================================== */
 export async function createInquiry(data) {
-  let created = null;
-  if (dbState.isConnected) {
-    try {
-      created = await Inquiry.create(data);
-    } catch (e) {
-      console.warn('createInquiry DB error:', e.message);
-    }
-  }
-  const inquiries = readJSON('inquiries.json', []);
-  const item = {
-    _id: created?._id ? String(created._id) : 'inq_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-    ...data,
-    status: data.status || 'new',
-    createdAt: new Date().toISOString(),
-  };
-  inquiries.unshift(item);
-  writeJSON('inquiries.json', inquiries);
-  return created || item;
+  requireMongoForContent();
+  return Inquiry.create(data);
 }
 
 export async function getInquiries({ category, country, status, q, page = 1, limit, dateFrom, dateTo } = {}) {
+   requireMongoForContent();
    // parse limit from env or use default
    const limitNum = limit ? parseInt(limit) : (process.env.INQUIRY_PAGE_LIMIT ? parseInt(process.env.INQUIRY_PAGE_LIMIT) : 10);
    const pageNum = parseInt(page);
@@ -163,11 +105,10 @@ export async function getInquiries({ category, country, status, q, page = 1, lim
        total = await Inquiry.countDocuments(filter);
        // Get paginated results
        items = await Inquiry.find(filter).sort("-createdAt").skip(skip).limit(limitNum);
-       if (items.length > 0 || dateFrom || dateTo) {
-         return { inquiries: items, total, page: pageNum, limit: limitNum };
-       }
+       return { inquiries: items, total, page: pageNum, limit: limitNum };
      } catch (e) {
        console.warn("getInquiries DB error:", e.message);
+       throw e;
      }
    }
 
@@ -213,6 +154,7 @@ export async function getInquiries({ category, country, status, q, page = 1, lim
 
 
 export async function getInquiryStats() {
+  requireMongoForContent();
   if (dbState.isConnected) {
     try {
       const [totals, categories] = await Promise.all([
@@ -227,18 +169,17 @@ export async function getInquiryStats() {
           { $group: { _id: { $ifNull: ['$category', 'General'] }, count: { $sum: 1 } } },
         ]),
       ]);
-      if (totals[0]?.total > 0) {
-        return {
-          totalInquiries: totals[0].total,
-          newInquiries: totals[0].newCount,
-          countsByCategory: categories.reduce((counts, row) => {
-            counts[row._id || 'General'] = row.count;
-            return counts;
-          }, {}),
-        };
-      }
+      return {
+        totalInquiries: totals[0]?.total || 0,
+        newInquiries: totals[0]?.newCount || 0,
+        countsByCategory: categories.reduce((counts, row) => {
+          counts[row._id || 'General'] = row.count;
+          return counts;
+        }, {}),
+      };
     } catch (e) {
       console.warn('getInquiryStats DB error:', e.message);
+      throw e;
     }
   }
 
@@ -255,32 +196,88 @@ export async function getInquiryStats() {
   };
 }
 
+const CHAT_ACTIVE_SESSION_TIMEOUT_MS = Math.max(60_000, Number(process.env.CHAT_ACTIVE_SESSION_TIMEOUT_MS) || 30 * 60 * 1000);
+
+export async function getChatAvailability() {
+  requireMongoForContent();
+  let state = await ChatbotState.findOne({ key: 'global' }).lean();
+  if (!state) return { online: false, activeVisitorId: '', busy: false, available: false };
+  const activeAt = Date.parse(state.updatedAt || '');
+  if (state.activeVisitorId && (!Number.isFinite(activeAt) || Date.now() - activeAt > CHAT_ACTIVE_SESSION_TIMEOUT_MS)) {
+    state = await ChatbotState.findOneAndUpdate({ key: 'global' }, { $set: { activeVisitorId: '' } }, { new: true }).lean();
+  }
+  return { online: state.online === true, activeVisitorId: state.activeVisitorId || '', busy: Boolean(state.activeVisitorId), available: state.online === true && !state.activeVisitorId };
+}
+
+export async function setChatAvailability(online) {
+  requireMongoForContent();
+  const previous = await getChatAvailability();
+  const state = await ChatbotState.findOneAndUpdate(
+    { key: 'global' },
+    { $set: { online: online === true, activeVisitorId: online ? previous.activeVisitorId : '', updatedAt: new Date() }, $setOnInsert: { key: 'global' } },
+    { upsert: true, new: true, runValidators: true }
+  ).lean();
+  return { online: state.online, activeVisitorId: state.activeVisitorId || '', busy: Boolean(state.activeVisitorId), available: state.online && !state.activeVisitorId };
+}
+
+export async function claimChatSession(visitorId) {
+  requireMongoForContent();
+  const state = await ChatbotState.findOne({ key: 'global' }).lean();
+  if (!state?.online) return { ok: false, reason: 'offline' };
+  if (state.activeVisitorId && state.activeVisitorId !== visitorId) return { ok: false, reason: 'busy' };
+  const claimed = await ChatbotState.findOneAndUpdate(
+    { key: 'global', online: true, activeVisitorId: state.activeVisitorId || '' },
+    { $set: { activeVisitorId: visitorId, updatedAt: new Date() } },
+    { new: true }
+  ).lean();
+  return claimed ? { ok: true, activeVisitorId: visitorId } : { ok: false, reason: 'busy' };
+}
+
+export async function releaseChatSession(visitorId) {
+  requireMongoForContent();
+  const released = await ChatbotState.findOneAndUpdate(
+    { key: 'global', activeVisitorId: visitorId },
+    { $set: { activeVisitorId: '', updatedAt: new Date() } },
+    { new: true }
+  );
+  return Boolean(released);
+}
+
+export async function getChatSessions() {
+  requireMongoForContent();
+  return ChatSession.find().sort('-updatedAt').lean();
+}
+
+export async function getChatSession(visitorId) {
+  requireMongoForContent();
+  return ChatSession.findOne({ visitorId }).lean();
+}
+
+export async function markChatMessagesRead(visitorId, senderRole) {
+  requireMongoForContent();
+  if (!['user', 'admin'].includes(senderRole)) throw Object.assign(new Error('Invalid chat message role.'), { status: 400 });
+  const readAt = new Date();
+  return ChatSession.updateOne(
+    { visitorId, messages: { $elemMatch: { role: senderRole, readAt: null } } },
+    { $set: { 'messages.$[message].readAt': readAt } },
+    { arrayFilters: [{ 'message.role': senderRole, 'message.readAt': null }] }
+  );
+}
+
+export async function saveChatSession(sessionData) {
+  requireMongoForContent();
+  const session = { ...sessionData, updatedAt: new Date().toISOString() };
+  return ChatSession.findOneAndUpdate({ visitorId: session.visitorId }, session, { new: true, upsert: true, runValidators: true }).lean();
+}
+
 export async function updateInquiry(id, updateData) {
-  if (dbState.isConnected) {
-    try {
-      await Inquiry.findByIdAndUpdate(id, updateData, { new: true });
-    } catch (e) {}
-  }
-  const inquiries = readJSON('inquiries.json', []);
-  const idx = inquiries.findIndex(i => String(i._id) === String(id));
-  if (idx >= 0) {
-    inquiries[idx] = { ...inquiries[idx], ...updateData, updatedAt: new Date().toISOString() };
-    writeJSON('inquiries.json', inquiries);
-    return inquiries[idx];
-  }
-  return null;
+  requireMongoForContent();
+  return Inquiry.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
 }
 
 export async function deleteInquiry(id) {
-  if (dbState.isConnected) {
-    try {
-      await Inquiry.findByIdAndDelete(id);
-    } catch (e) {}
-  }
-  let inquiries = readJSON('inquiries.json', []);
-  inquiries = inquiries.filter(i => String(i._id) !== String(id));
-  writeJSON('inquiries.json', inquiries);
-  return { ok: true };
+  requireMongoForContent();
+  return Inquiry.findByIdAndDelete(id);
 }
 
 /* ========================================================================== */
@@ -288,37 +285,24 @@ export async function deleteInquiry(id) {
 /* ========================================================================== */
 export async function getCMSContent(pageName) {
   if (dbState.isConnected) {
-    try {
-      const records = await CMSContent.find({ page: pageName });
-      if (records.length > 0) {
-        return records.reduce((acc, r) => {
-          acc[r.section] = r.data;
-          return acc;
-        }, {});
-      }
-    } catch (e) {}
+    const records = await CMSContent.find({ page: pageName });
+    return records.reduce((acc, r) => {
+      acc[r.section] = r.data;
+      return acc;
+    }, {});
   }
   const allCMS = readJSON('cms.json', {});
   return allCMS[pageName] || {};
 }
 
 export async function saveCMSSection(pageName, sectionName, data) {
-  if (dbState.isConnected) {
-    try {
-      await CMSContent.findOneAndUpdate(
-        { page: pageName, section: sectionName },
-        { page: pageName, section: sectionName, data },
-        { upsert: true, new: true }
-      );
-    } catch (e) {
-      console.warn('saveCMSSection DB error:', e.message);
-    }
-  }
-  const allCMS = readJSON('cms.json', {});
-  if (!allCMS[pageName]) allCMS[pageName] = {};
-  allCMS[pageName][sectionName] = data;
-  writeJSON('cms.json', allCMS);
-  return { ok: true, data };
+  requireMongoForContent();
+  const saved = await CMSContent.findOneAndUpdate(
+    { page: pageName, section: sectionName },
+    { page: pageName, section: sectionName, data },
+    { upsert: true, new: true, runValidators: true }
+  );
+  return { ok: true, data: saved.data };
 }
 
 /* ========================================================================== */
@@ -327,10 +311,7 @@ export async function saveCMSSection(pageName, sectionName, data) {
 export async function getSEO(pageUrl) {
   const cleanUrl = String(pageUrl || '').replace(/^\/+|\/+$/g, '') || '/';
   if (dbState.isConnected) {
-    try {
-      const seo = await SEOMetadata.findOne({ pageUrl: cleanUrl, status: 'active' });
-      if (seo) return seo;
-    } catch (e) {}
+    return SEOMetadata.findOne({ pageUrl: cleanUrl, status: 'active' });
   }
   const seos = readJSON('seo.json', []);
   return seos.find(s => s.pageUrl === cleanUrl || s.pageUrl === '/' + cleanUrl) || null;
@@ -338,55 +319,21 @@ export async function getSEO(pageUrl) {
 
 export async function getAllSEO() {
   if (dbState.isConnected) {
-    try {
-      const seos = await SEOMetadata.find().sort('pageUrl');
-      if (seos.length > 0) return seos;
-    } catch (e) {}
+    return SEOMetadata.find().sort('pageUrl');
   }
   return readJSON('seo.json', []);
 }
 
 export async function saveSEO(data) {
+  requireMongoForContent();
   const cleanUrl = String(data.pageUrl || '').replace(/^\/+|\/+$/g, '') || '/';
   data.pageUrl = cleanUrl === '/' ? '/' : '/' + cleanUrl;
-
-  let saved = null;
-  if (dbState.isConnected) {
-    try {
-      saved = await SEOMetadata.findOneAndUpdate(
-        { pageUrl: data.pageUrl },
-        data,
-        { upsert: true, new: true, runValidators: true }
-      );
-    } catch (e) {
-      console.warn('saveSEO DB error:', e.message);
-    }
-  }
-
-  const seos = readJSON('seo.json', []);
-  const idx = seos.findIndex(s => s.pageUrl === data.pageUrl || (data._id && String(s._id) === String(data._id)));
-  if (idx >= 0) {
-    seos[idx] = { ...seos[idx], ...data, updatedAt: new Date().toISOString() };
-    saved = saved || seos[idx];
-  } else {
-    const newItem = { _id: data._id || 'seo_' + Date.now(), ...data, createdAt: new Date().toISOString() };
-    seos.push(newItem);
-    saved = saved || newItem;
-  }
-  writeJSON('seo.json', seos);
-  return saved;
+  return SEOMetadata.findOneAndUpdate({ pageUrl: data.pageUrl }, data, { upsert: true, new: true, runValidators: true });
 }
 
 export async function deleteSEO(id) {
-  if (dbState.isConnected) {
-    try {
-      await SEOMetadata.findByIdAndDelete(id);
-    } catch (e) {}
-  }
-  let seos = readJSON('seo.json', []);
-  seos = seos.filter(s => String(s._id) !== String(id));
-  writeJSON('seo.json', seos);
-  return { ok: true };
+  requireMongoForContent();
+  return SEOMetadata.findByIdAndDelete(id);
 }
 
 /* ========================================================================== */
@@ -395,12 +342,9 @@ export async function deleteSEO(id) {
 export async function getPosts(category, contentType = 'blog') {
   const isNews = contentType === 'news';
   if (dbState.isConnected) {
-    try {
-      const f = { status: 'published', ...(isNews ? { contentType: 'news' } : { contentType: { $ne: 'news' } }) };
-      if (category) f.category = category;
-      const posts = await Post.find(f).select('-content').sort('-createdAt').limit(Math.max(0, Number(process.env[isNews ? 'NEWS_MAX_COUNT' : 'BLOG_MAX_COUNT'] || 30)));
-      if (posts.length > 0) return posts;
-    } catch (e) {}
+    const f = { status: 'published', ...(isNews ? { contentType: 'news' } : { contentType: { $ne: 'news' } }) };
+    if (category) f.category = category;
+    return Post.find(f).select('-content').sort('-createdAt').limit(Math.max(0, Number(process.env[isNews ? 'NEWS_MAX_COUNT' : 'BLOG_MAX_COUNT'] || 30)));
   }
   let posts = readJSON(isNews ? 'news.json' : 'posts.json', []);
   if (isNews) posts = posts.filter(post => (post.status || 'published') === 'published');
@@ -412,13 +356,10 @@ export async function getPostBySlug(slug, contentType = 'blog') {
   const isNews = contentType === 'news';
   const typeFilter = isNews ? { contentType: 'news' } : { contentType: { $ne: 'news' } };
   if (dbState.isConnected) {
-    try {
-      const post = await Post.findOneAndUpdate({ slug, status: 'published', ...typeFilter }, { $inc: { views: 1 } }, { new: true });
-      if (post) {
-        const related = await Post.find({ status: 'published', _id: { $ne: post._id }, ...typeFilter }).select('-content').sort('-createdAt').limit(3);
-        return { post, related };
-      }
-    } catch (e) {}
+    const post = await Post.findOneAndUpdate({ slug, status: 'published', ...typeFilter }, { $inc: { views: 1 } }, { new: true });
+    if (!post) return null;
+    const related = await Post.find({ status: 'published', _id: { $ne: post._id }, ...typeFilter }).select('-content').sort('-createdAt').limit(3);
+    return { post, related };
   }
   const posts = readJSON(isNews ? 'news.json' : 'posts.json', []);
   const post = posts.find(p => p.slug === slug && (!isNews || (p.status || 'published') === 'published'));
@@ -432,59 +373,30 @@ export async function getAllPostsAdmin(contentType = 'blog') {
   const isNews = contentType === 'news';
   const typeFilter = isNews ? { contentType: 'news' } : { contentType: { $ne: 'news' } };
   if (dbState.isConnected) {
-    try {
-      const posts = await Post.find(typeFilter).sort('-createdAt');
-      if (posts.length > 0) return posts;
-    } catch (e) {}
+    return Post.find(typeFilter).sort('-createdAt');
   }
   return readJSON(isNews ? 'news.json' : 'posts.json', []);
 }
 
 export async function savePost(data, contentType = 'blog') {
+  requireMongoForContent();
   const isNews = contentType === 'news';
   data = { ...data, contentType: isNews ? 'news' : 'blog' };
   const maxChars = Math.max(1, Number(process.env[isNews ? 'NEWS_MAX_CONTENT_CHARS' : 'BLOG_MAX_CONTENT_CHARS'] || 800));
   if (String(data.content || '').length > maxChars) throw Object.assign(new Error(`${isNews ? 'News' : 'Blog'} content cannot exceed ${maxChars} characters.`), { status: 400 });
-  let saved = null;
   if (!data.slug && data.title) {
     data.slug = data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   }
-  if (dbState.isConnected) {
-    try {
-      if (data._id && String(data._id).length === 24) {
-        saved = await Post.findOneAndUpdate({ _id: data._id, ...(isNews ? { contentType: 'news' } : { contentType: { $ne: 'news' } }) }, data, { new: true });
-      } else {
-        saved = await Post.findOneAndUpdate({ slug: data.slug, contentType: data.contentType }, data, { upsert: true, new: true });
-      }
-    } catch (e) {}
-  }
-  const filename = isNews ? 'news.json' : 'posts.json';
-  const posts = readJSON(filename, []);
-  const idx = posts.findIndex(p => p.slug === data.slug || (data._id && String(p._id) === String(data._id)));
-  if (idx >= 0) {
-    posts[idx] = { ...posts[idx], ...data, updatedAt: new Date().toISOString() };
-    saved = saved || posts[idx];
-  } else {
-    const newItem = { _id: data._id || 'post_' + Date.now(), ...data, createdAt: new Date().toISOString() };
-    posts.unshift(newItem);
-    saved = saved || newItem;
-  }
-  writeJSON(filename, posts);
-  return saved;
+  const typeFilter = isNews ? { contentType: 'news' } : { contentType: { $ne: 'news' } };
+  return data._id && /^[a-f\d]{24}$/i.test(String(data._id))
+    ? Post.findOneAndUpdate({ _id: data._id, ...typeFilter }, data, { new: true, runValidators: true })
+    : Post.findOneAndUpdate({ slug: data.slug, contentType: data.contentType }, data, { upsert: true, new: true, runValidators: true });
 }
 
 export async function deletePost(id, contentType = 'blog') {
+  requireMongoForContent();
   const isNews = contentType === 'news';
-  if (dbState.isConnected) {
-    try {
-      await Post.findOneAndDelete({ _id: id, ...(isNews ? { contentType: 'news' } : { contentType: { $ne: 'news' } }) });
-    } catch (e) {}
-  }
-  const filename = isNews ? 'news.json' : 'posts.json';
-  let posts = readJSON(filename, []);
-  posts = posts.filter(p => String(p._id) !== String(id) && p.slug !== String(id));
-  writeJSON(filename, posts);
-  return { ok: true };
+  return Post.findOneAndDelete({ _id: id, ...(isNews ? { contentType: 'news' } : { contentType: { $ne: 'news' } }) });
 }
 
 /* ========================================================================== */
@@ -515,289 +427,152 @@ export async function verifyAdmin(email, password) {
 // ==========================================================================
 
 export async function getAllBanners() {
-  if (dbState.isConnected) {
-    try {
-      return await Banner.find().sort({ displayOrder: 1 });
-    } catch (e) {
-      console.warn('getAllBanners DB error:', e.message);
-    }
-  }
-  return [];
+  requireMongoForContent();
+  return Banner.find().sort({ displayOrder: 1 });
 }
 
 export async function saveBanner(bannerData) {
-  if (dbState.isConnected) {
-    try {
-      if (bannerData._id) {
-        return await Banner.findByIdAndUpdate(bannerData._id, bannerData, { new: true, runValidators: true });
-      } else {
-        return await Banner.create(bannerData);
-      }
-    } catch (e) {
-      console.warn('saveBanner DB error:', e.message);
-    }
+  requireMongoForContent();
+  if (bannerData._id && /^[a-f\d]{24}$/i.test(String(bannerData._id))) {
+    return Banner.findByIdAndUpdate(bannerData._id, bannerData, { new: true, runValidators: true });
   }
-  return null;
+  const { _id, ...content } = bannerData;
+  return Banner.findOneAndUpdate({ imageUrl: content.imageUrl }, content, { new: true, upsert: true, runValidators: true });
 }
 
 export async function deleteBanner(id) {
-  if (dbState.isConnected) {
-    try {
-      return await Banner.findByIdAndDelete(id);
-    } catch (e) {
-      console.warn('deleteBanner DB error:', e.message);
-    }
-  }
-  return null;
+  requireMongoForContent();
+  if (!/^[a-f\d]{24}$/i.test(String(id))) throw Object.assign(new Error('This banner is not saved in MongoDB. Refresh the banner list and try again.'), { status: 404 });
+  return Banner.findByIdAndDelete(id);
 }
 
 // Reel
 export async function getAllReels() {
-  if (dbState.isConnected) {
-    try {
-      return await Reel.find().sort({ displayOrder: 1 });
-    } catch (e) {
-      console.warn('getAllReels DB error:', e.message);
-    }
-  }
-  return [];
+  requireMongoForContent();
+  return Reel.find().sort({ displayOrder: 1 });
 }
 
 export async function saveReel(reelData) {
-  if (dbState.isConnected) {
-    try {
-      if (reelData._id) {
-        return await Reel.findByIdAndUpdate(reelData._id, reelData, { new: true, runValidators: true });
-      } else {
-        return await Reel.create(reelData);
-      }
-    } catch (e) {
-      console.warn('saveReel DB error:', e.message);
-    }
-  }
-  return null;
+  requireMongoForContent();
+  const saved = reelData._id
+    ? await Reel.findByIdAndUpdate(reelData._id, reelData, { new: true, runValidators: true })
+    : await Reel.create(reelData);
+  if (!saved) throw Object.assign(new Error('Reel was not found and could not be updated.'), { status: 404 });
+  return saved;
 }
 
 export async function deleteReel(id) {
-  if (dbState.isConnected) {
-    try {
-      return await Reel.findByIdAndDelete(id);
-    } catch (e) {
-      console.warn('deleteReel DB error:', e.message);
-    }
-  }
-  return null;
+  requireMongoForContent();
+  return Reel.findByIdAndDelete(id);
 }
 
 // Testimonial
 export async function getAllTestimonials() {
-  if (dbState.isConnected) {
-    try {
-      return await Testimonial.find().sort({ _id: -1 });
-    } catch (e) {
-      console.warn('getAllTestimonials DB error:', e.message);
-    }
-  }
-  return [];
+  requireMongoForContent();
+  return Testimonial.find().sort({ _id: -1 });
 }
 
 export async function saveTestimonial(testimonialData) {
-  const maxCount = Math.max(1, Number(process.env.TESTIMONIAL_MAX_COUNT || 20));
-  if (!testimonialData._id && dbState.isConnected && await Testimonial.countDocuments() >= maxCount) throw Object.assign(new Error('You can add up to ' + maxCount + ' testimonials.'), { status: 400 });
-  if (dbState.isConnected) {
-    try {
-      if (testimonialData._id) {
-        return await Testimonial.findByIdAndUpdate(testimonialData._id, testimonialData, { new: true, runValidators: true });
-      } else {
-        return await Testimonial.create(testimonialData);
-      }
-    } catch (e) {
-      console.warn('saveTestimonial DB error:', e.message);
-    }
-  }
-  return null;
+  requireMongoForContent();
+  const saved = testimonialData._id
+    ? await Testimonial.findByIdAndUpdate(testimonialData._id, testimonialData, { new: true, runValidators: true })
+    : await Testimonial.create(testimonialData);
+  if (!saved) throw Object.assign(new Error('Testimonial was not found and could not be updated.'), { status: 404 });
+  return saved;
 }
 
 export async function likeTestimonial(id) {
-  if (!dbState.isConnected) return null;
-  try {
-    return await Testimonial.findByIdAndUpdate(id, { $inc: { likes: 1 } }, { new: true });
-  } catch (e) {
-    console.warn('likeTestimonial DB error:', e.message);
-    return null;
-  }
-}
-export async function deleteTestimonial(id) {
-  if (dbState.isConnected) {
-    try {
-      return await Testimonial.findByIdAndDelete(id);
-    } catch (e) {
-      console.warn('deleteTestimonial DB error:', e.message);
-    }
-  }
-  return null;
+  requireMongoForContent();
+  return Testimonial.findByIdAndUpdate(id, { $inc: { likes: 1 } }, { new: true });
 }
 
+export async function deleteTestimonial(id) {
+  requireMongoForContent();
+  return Testimonial.findByIdAndDelete(id);
+}
 // Review
 export async function getAllReviews() {
-  if (dbState.isConnected) {
-    try {
-      return await Review.find().sort({ _id: -1 });
-    } catch (e) {
-      console.warn('getAllReviews DB error:', e.message);
-    }
-  }
-  return [];
+  requireMongoForContent();
+  return Review.find().sort({ _id: -1 });
 }
 
 export async function saveReview(reviewData) {
+  requireMongoForContent();
   const maxCount = Math.max(1, Number(process.env.REVIEW_MAX_COUNT || 20));
-  const maxChars = Math.max(1, Number(process.env.REVIEW_MAX_MESSAGE_CHARS || 200));
+  const maxChars = Math.max(1, Number(process.env.REVIEW_MAX_MESSAGE_CHARS || 500));
   if (String(reviewData.message || '').length > maxChars) throw Object.assign(new Error('Review message cannot exceed ' + maxChars + ' characters.'), { status: 400 });
-  if (!reviewData._id && dbState.isConnected && await Review.countDocuments() >= maxCount) throw Object.assign(new Error('You can add up to ' + maxCount + ' reviews.'), { status: 400 });
-  if (dbState.isConnected) {
-    try {
-      if (reviewData._id) {
-        return await Review.findByIdAndUpdate(reviewData._id, reviewData, { new: true, runValidators: true });
-      } else {
-        return await Review.create(reviewData);
-      }
-    } catch (e) {
-      console.warn('saveReview DB error:', e.message);
-    }
-  }
-  return null;
+  if (!reviewData._id && await Review.countDocuments() >= maxCount) throw Object.assign(new Error('You can add up to ' + maxCount + ' reviews.'), { status: 400 });
+  const saved = reviewData._id
+    ? await Review.findByIdAndUpdate(reviewData._id, reviewData, { new: true, runValidators: true })
+    : await Review.create(reviewData);
+  if (!saved) throw Object.assign(new Error('Review was not found and could not be updated.'), { status: 404 });
+  return saved;
 }
 
 export async function deleteReview(id) {
-  if (dbState.isConnected) {
-    try {
-      return await Review.findByIdAndDelete(id);
-    } catch (e) {
-      console.warn('deleteReview DB error:', e.message);
-    }
-  }
-  return null;
+  requireMongoForContent();
+  return Review.findByIdAndDelete(id);
 }
 
 // TeamImage
 export async function getAllTeamImages() {
-  if (dbState.isConnected) {
-    try {
-      return await TeamImage.find().sort({ _id: -1 });
-    } catch (e) {
-      console.warn('getAllTeamImages DB error:', e.message);
-    }
-  }
-  return [];
+  requireMongoForContent();
+  return TeamImage.find().sort({ _id: -1 });
 }
 
 export async function saveTeamImage(teamImageData) {
-  if (dbState.isConnected) {
-    try {
-      if (teamImageData._id) {
-        return await TeamImage.findByIdAndUpdate(teamImageData._id, teamImageData, { new: true, runValidators: true });
-      } else {
-        return await TeamImage.create(teamImageData);
-      }
-    } catch (e) {
-      console.warn('saveTeamImage DB error:', e.message);
-    }
-  }
-  return null;
+  requireMongoForContent();
+  const saved = teamImageData._id
+    ? await TeamImage.findByIdAndUpdate(teamImageData._id, teamImageData, { new: true, runValidators: true })
+    : await TeamImage.create(teamImageData);
+  if (!saved) throw Object.assign(new Error('Team image was not found and could not be updated.'), { status: 404 });
+  return saved;
 }
 
 export async function deleteTeamImage(id) {
-  if (dbState.isConnected) {
-    try {
-      return await TeamImage.findByIdAndDelete(id);
-    } catch (e) {
-      console.warn('deleteTeamImage DB error:', e.message);
-    }
-  }
-  return null;
+  requireMongoForContent();
+  return TeamImage.findByIdAndDelete(id);
 }
 
 // CareerJob
 export async function getAllCareerJobs() {
-  if (dbState.isConnected) {
-    try {
-      return await CareerJob.find().sort({ _id: -1 });
-    } catch (e) {
-      console.warn('getAllCareerJobs DB error:', e.message);
-    }
-  }
-  return [];
+  requireMongoForContent();
+  return CareerJob.find().sort({ _id: -1 });
 }
 
 export async function saveCareerJob(jobData) {
-  if (dbState.isConnected) {
-    try {
-      if (jobData._id) {
-        return await CareerJob.findByIdAndUpdate(jobData._id, jobData, { new: true, runValidators: true });
-      } else {
-        return await CareerJob.create(jobData);
-      }
-    } catch (e) {
-      console.warn('saveCareerJob DB error:', e.message);
-    }
-  }
-  return null;
-}
-
-export async function deleteCareerJob(id) {
-  if (dbState.isConnected) {
-    try {
-      return await CareerJob.findByIdAndDelete(id);
-    } catch (e) {
-      console.warn('deleteCareerJob DB error:', e.message);
-    }
-  }
-  return null;
-}
-
-export async function getCareerApplicationCount(jobId) {
-  if (dbState.isConnected) {
-    try { return await CareerApplication.countDocuments({ job: jobId }); }
-    catch (e) { console.warn('getCareerApplicationCount DB error:', e.message); }
-  }
-  return readJSON('career-applications.json', []).filter(item => String(item.job?._id || item.job) === String(jobId)).length;
-}
-// CareerApplication
-export async function getAllCareerApplications() {
-  if (dbState.isConnected) {
-    try { return await CareerApplication.find().populate('job').sort({ appliedAt: -1 }); }
-    catch (e) { console.warn('getAllCareerApplications DB error:', e.message); }
-  }
-  const applications = readJSON('career-applications.json', []);
-  const jobs = await getAllCareerJobs();
-  return applications.map(application => ({ ...application, job: jobs.find(job => String(job._id) === String(application.job)) || null })).sort((a, b) => new Date(b.appliedAt || b.createdAt) - new Date(a.appliedAt || a.createdAt));
-}
-
-export async function saveCareerApplication(appData) {
-  if (dbState.isConnected) {
-    try {
-      if (appData._id) return await CareerApplication.findByIdAndUpdate(appData._id, appData, { new: true, runValidators: true });
-      return await CareerApplication.create({ status: 'received', ...appData });
-    } catch (e) { console.warn('saveCareerApplication DB error:', e.message); }
-  }
-  const applications = readJSON('career-applications.json', []);
-  const id = appData._id || `application_${Date.now()}`;
-  const index = applications.findIndex(item => String(item._id) === String(id));
-  const saved = { ...(index >= 0 ? applications[index] : {}), ...appData, _id: id, status: appData.status || applications[index]?.status || 'received', appliedAt: appData.appliedAt || applications[index]?.appliedAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
-  if (index >= 0) applications[index] = saved; else applications.push(saved);
-  writeJSON('career-applications.json', applications);
+  requireMongoForContent();
+  const saved = jobData._id
+    ? await CareerJob.findByIdAndUpdate(jobData._id, jobData, { new: true, runValidators: true })
+    : await CareerJob.create(jobData);
+  if (!saved) throw Object.assign(new Error('Job was not found and could not be updated.'), { status: 404 });
   return saved;
 }
 
+export async function deleteCareerJob(id) {
+  requireMongoForContent();
+  return CareerJob.findByIdAndDelete(id);
+}
+
+export async function getCareerApplicationCount(jobId) {
+  requireMongoForContent();
+  return CareerApplication.countDocuments({ job: jobId });
+}
+// CareerApplication
+export async function getAllCareerApplications() {
+  requireMongoForContent();
+  return CareerApplication.find().populate('job').sort({ appliedAt: -1 });
+}
+
+export async function saveCareerApplication(appData) {
+  requireMongoForContent();
+  if (appData._id) return CareerApplication.findByIdAndUpdate(appData._id, appData, { new: true, runValidators: true });
+  return CareerApplication.create({ status: 'received', ...appData });
+}
+
 export async function deleteCareerApplication(id) {
-  if (dbState.isConnected) {
-    try { return await CareerApplication.findByIdAndDelete(id); }
-    catch (e) { console.warn('deleteCareerApplication DB error:', e.message); }
-  }
-  const applications = readJSON('career-applications.json', []).filter(item => String(item._id) !== String(id));
-  writeJSON('career-applications.json', applications);
-  return { _id: id };
+  requireMongoForContent();
+  return CareerApplication.findByIdAndDelete(id);
 }
 
 const podcastLimit = () => { const value = Number(process.env.PODCAST_MAX_COUNT || 20); return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 20; };
@@ -816,49 +591,29 @@ const podcastUrlIsSupported = value => {
 const validatePodcast = data => {
   const title = String(data.title || '').trim();
   const url = String(data.url || '').trim();
+  const thumbnailUrl = String(data.thumbnailUrl || '').trim();
   if (title.length < 3 || title.length > 120) throw Object.assign(new Error('Podcast title must be 3 to 120 characters.'), { status: 400 });
   if (url.length > 1000 || !podcastUrlIsSupported(url)) throw Object.assign(new Error('Enter a supported YouTube, Spotify episode, Apple Podcasts, or SoundCloud link.'), { status: 400 });
-  return { title, url };
+  if (thumbnailUrl.length > 500) throw Object.assign(new Error('Thumbnail path is too long.'), { status: 400 });
+  return { title, url, thumbnailUrl };
 };
 export async function getPodcasts() {
+  requireMongoForContent();
   const limit = podcastLimit();
   if (!limit) return [];
-  if (dbState.isConnected) {
-    try { const podcasts = await Podcast.find().sort('-createdAt').limit(limit); if (podcasts.length) return podcasts; }
-    catch (e) { console.warn('getPodcasts DB error:', e.message); }
-  }
-  return readJSON('podcasts.json', []).slice().sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, limit);
+  return Podcast.find().sort('-createdAt').limit(limit);
 }
 export async function getAllPodcastsAdmin() {
-  if (dbState.isConnected) {
-    try { const podcasts = await Podcast.find().sort('-createdAt'); if (podcasts.length) return podcasts; }
-    catch (e) { console.warn('getAllPodcastsAdmin DB error:', e.message); }
-  }
-  return readJSON('podcasts.json', []).slice().sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  requireMongoForContent();
+  return Podcast.find().sort('-createdAt');
 }
 export async function savePodcast(data) {
+  requireMongoForContent();
   const clean = validatePodcast(data);
-  const podcasts = readJSON('podcasts.json', []);
-  let saved = null;
-  if (dbState.isConnected) {
-    try {
-      saved = data._id
-        ? await Podcast.findByIdAndUpdate(data._id, clean, { new: true, runValidators: true })
-        : await Podcast.create(clean);
-    } catch (e) { console.warn('savePodcast DB error:', e.message); }
-  }
-  const idx = podcasts.findIndex(item => data._id && String(item._id) === String(data._id));
-  const now = new Date().toISOString();
-  const item = { ...(idx >= 0 ? podcasts[idx] : {}), ...clean, _id: data._id || `podcast_${Date.now()}`, updatedAt: now, createdAt: idx >= 0 ? podcasts[idx].createdAt : now };
-  if (idx >= 0) podcasts[idx] = item; else podcasts.unshift(item);
-  writeJSON('podcasts.json', podcasts);
-  return saved || item;
+  if (data._id && /^[a-f\d]{24}$/i.test(String(data._id))) return Podcast.findByIdAndUpdate(data._id, clean, { new: true, runValidators: true });
+  return Podcast.create(clean);
 }
 export async function deletePodcast(id) {
-  if (dbState.isConnected) {
-    try { await Podcast.findByIdAndDelete(id); }
-    catch (e) { console.warn('deletePodcast DB error:', e.message); }
-  }
-  writeJSON('podcasts.json', readJSON('podcasts.json', []).filter(item => String(item._id) !== String(id)));
-  return { _id: id };
+  requireMongoForContent();
+  return Podcast.findByIdAndDelete(id);
 }

@@ -2,11 +2,47 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { getPage, getAllPages, getCMSContent, getSEO, getPosts, getPostBySlug, getPodcasts, createInquiry, saveCMSSection, getAllCareerJobs, saveCareerApplication, getAllTestimonials, likeTestimonial, getAllBanners, getAllReels, getAllReviews, getAllTeamImages, getCareerApplicationCount } from '../services/storage.js';
+import { getPage, getAllPages, getCMSContent, getSEO, getPosts, getPostBySlug, getPodcasts, createInquiry, saveCMSSection, getAllCareerJobs, saveCareerApplication, getAllTestimonials, likeTestimonial, getAllBanners, getAllReels, getAllReviews, getAllTeamImages, getCareerApplicationCount, getChatAvailability, getChatSession, saveChatSession, claimChatSession, markChatMessagesRead } from '../services/storage.js';
 import emailService from '../services/emailService.js';
 
 const r = Router();
 const wrap = fn => (req, res, next) => fn(req, res).catch(next);
+const chatbotOptions = [
+  'Study Visa',
+  'Work Visa',
+  'Tourist Visa',
+  'PR & Immigration',
+  'Visa Fees & Documents',
+  'Contact Our Team',
+];
+const chatbotAnswers = [
+  {
+    match: /\b(study|student|education|university|college)\b/i,
+    answer: 'Study visa requirements depend on your destination, course and personal profile. Our team can help you review admission, financial and application documents. Select “Contact Our Team” if you would like a consultation.',
+  },
+  {
+    match: /\b(work|job|employment|permit)\b/i,
+    answer: 'Work visa and permit routes vary by country, occupation and eligibility. We can help you review possible pathways and the documents they require. Select “Contact Our Team” to discuss your profile.',
+  },
+  {
+    match: /\b(tourist|visitor|visit|travel|holiday)\b/i,
+    answer: 'Visitor visa requirements depend on your destination, travel purpose and circumstances. Typical applications may require identity, travel, financial and supporting documents. Select “Contact Our Team” for guidance on your destination.',
+  },
+  {
+    match: /\b(pr|permanent residence|permanent residency|immigration|express entry|pnp)\b/i,
+    answer: 'Permanent residence pathways have different eligibility criteria, which can change by country and program. A profile assessment is needed to identify suitable options; no visa outcome can be guaranteed. Select “Contact Our Team” to request an assessment.',
+  },
+  {
+    match: /\b(fee|fees|cost|price|document|documents|paperwork)\b/i,
+    answer: 'Government fees and document checklists depend on the destination and visa type, and can change. Please check the relevant immigration authority for current government fees. Select “Contact Our Team” for help reviewing your application documents.',
+  },
+  {
+    match: /\b(contact|team|consult|call|callback|person|human)\b/i,
+    answer: 'Please use the contact form below and our team will get in touch. Share your name, phone number and email, and choose the visa topic you need help with.',
+  },
+];
+const getChatbotAnswer = message => chatbotAnswers.find(item => item.match.test(message))?.answer
+  || 'I can help with general information about study, work, visitor and permanent-residence visas, fees and documents. Choose one of the options below or select “Contact Our Team” for personal guidance.';
 const careerApplicationLocks = new Map();
 const getCareerApplicationLimit = () => { const value = Number(process.env.MAX_CAREER_APPLICATIONS_PER_JOB || 50); return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 50; };
 const withCareerApplicationLock = async (key, task) => {
@@ -121,6 +157,138 @@ r.post('/inquiries', wrap(async (req, res) => {
   res.status(201).json({ ok: true, id: created._id });
 }));
 
+// Rule-based chatbot responses and contact requests. No AI service or chat transcript is stored.
+r.get('/chatbot/options', (_req, res) => {
+  res.json(chatbotOptions);
+});
+
+r.post('/chatbot/message', (req, res) => {
+  const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+  if (!message || message.length > 500) {
+    return res.status(400).json({ message: 'Enter a question up to 500 characters long.' });
+  }
+  res.json({ answer: getChatbotAnswer(message) });
+});
+
+r.get('/chatbot/status', wrap(async (_req, res) => {
+  const { online, busy, available } = await getChatAvailability();
+  res.json({ online, busy, available });
+}));
+
+r.post('/chatbot/session', wrap(async (req, res) => {
+  const { visitorId, details, messages = [] } = req.body || {};
+  if (typeof visitorId !== 'string' || !/^[a-zA-Z0-9-]{20,80}$/.test(visitorId)) return res.status(400).json({ message: 'Invalid chat session.' });
+  const safeDetails = details && typeof details === 'object' ? {
+    name: String(details.name || '').trim().slice(0, 100), phone: String(details.phone || '').trim().slice(0, 20),
+    email: String(details.email || '').trim().slice(0, 254), country: String(details.country || '').trim().slice(0, 100),
+    visaType: String(details.visaType || details.topic || '').trim().slice(0, 100),
+  } : {};
+  if (safeDetails.name.length < 2 || !/^\+?[0-9\s().-]{7,20}$/.test(safeDetails.phone) || safeDetails.phone.replace(/\D/g, '').length < 7 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(safeDetails.email) || !safeDetails.country || !safeDetails.visaType) return res.status(400).json({ message: 'Complete your name, mobile, email, country and visa type before starting a live chat.' });
+  const claim = await claimChatSession(visitorId);
+  if (!claim.ok) return res.status(409).json({ message: claim.reason === 'busy' ? 'The advisor is helping another visitor right now. Please request a call instead.' : 'The advisor is offline right now. Please request a call.' });
+  const existingMessages = (await getChatSession(visitorId))?.messages || [];
+  const safeMessages = Array.isArray(messages) ? messages.slice(-50).filter(item => ['user', 'assistant'].includes(item?.role) && typeof item.text === 'string').map(item => ({ role: item.role === 'assistant' ? 'admin' : 'user', text: item.text.slice(0, 1000), at: new Date().toISOString() })) : [];
+  const saved = await saveChatSession({ visitorId, details: safeDetails, messages: existingMessages.length ? existingMessages : safeMessages });
+  res.json({ visitorId, messages: saved.messages || [] });
+}));
+
+r.get('/chatbot/session/:visitorId', wrap(async (req, res) => {
+  if (!/^[a-zA-Z0-9-]{20,80}$/.test(req.params.visitorId)) return res.status(400).json({ message: 'Invalid chat session.' });
+  if (req.query.read === 'true') await markChatMessagesRead(req.params.visitorId, 'admin');
+  const session = await getChatSession(req.params.visitorId);
+  const status = await getChatAvailability();
+  res.json({ messages: session?.messages || [], online: status.online, busy: status.busy, available: status.available, active: status.activeVisitorId === req.params.visitorId });
+}));
+
+r.post('/chatbot/session/:visitorId/messages', wrap(async (req, res) => {
+  const { text } = req.body || {};
+  const cleanText = typeof text === 'string' ? text.trim() : '';
+  if (!/^[a-zA-Z0-9-]{20,80}$/.test(req.params.visitorId) || !cleanText || cleanText.length > 1000) return res.status(400).json({ message: 'Enter a message up to 1000 characters.' });
+  const status = await getChatAvailability();
+  if (!status.online) return res.status(409).json({ message: 'The advisor is offline right now.' });
+  if (status.activeVisitorId !== req.params.visitorId) return res.status(409).json({ message: 'The advisor is currently helping another visitor.' });
+  const existing = await getChatSession(req.params.visitorId);
+  if (!existing) return res.status(404).json({ message: 'Chat session not found.' });
+  const messages = [...(existing.messages || []), { role: 'user', text: cleanText, at: new Date().toISOString() }].slice(-200);
+  await saveChatSession({ ...existing, messages });
+  await claimChatSession(req.params.visitorId);
+  res.json({ ok: true, messages });
+}));
+
+r.post('/chatbot/leads', wrap(async (req, res) => {
+  const { name, phone, email, topic, country, message, sourcePage, consent, callDate, callTime } = req.body || {};
+  const cleanName = typeof name === 'string' ? name.trim() : '';
+  const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
+  const cleanEmail = typeof email === 'string' ? email.trim() : '';
+  const cleanTopic = typeof topic === 'string' ? topic.trim() : '';
+  const cleanMessage = typeof message === 'string' ? message.trim() : '';
+
+  if (cleanName.length < 2 || cleanName.length > 100) {
+    return res.status(400).json({ message: 'Enter a name between 2 and 100 characters.' });
+  }
+  if (!/^\+?[0-9\s().-]{7,20}$/.test(cleanPhone) || cleanPhone.replace(/\D/g, '').length < 7) {
+    return res.status(400).json({ message: 'Enter a valid phone number.' });
+  }
+  if (cleanEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
+    return res.status(400).json({ message: 'Enter a valid email address.' });
+  }
+  if (!chatbotOptions.includes(cleanTopic)) {
+    return res.status(400).json({ message: 'Choose a valid visa topic.' });
+  }
+  if (cleanMessage.length > 2000) {
+    return res.status(400).json({ message: 'The message must be 2000 characters or fewer.' });
+  }
+  if (consent !== true) {
+    return res.status(400).json({ message: 'Consent is required before we can contact you.' });
+  }
+
+  const cleanCountry = typeof country === 'string' ? country.trim().slice(0, 100) : '';
+  const isCallRequest = Boolean(callDate || callTime);
+  if (isCallRequest && (!/^\d{4}-\d{2}-\d{2}$/.test(callDate || '') || !/^([01]\d|2[0-3]):[0-5]\d$/.test(callTime || '') || new Date(`${callDate}T${callTime}:00`).getTime() <= Date.now())) {
+    return res.status(400).json({ message: 'Choose a future date and a valid call time.' });
+  }
+  if (!cleanCountry) return res.status(400).json({ message: 'Choose your country.' });
+
+  const cleanSourcePage = typeof sourcePage === 'string' && /^\/(?!\/)/.test(sourcePage)
+    ? sourcePage.slice(0, 200)
+    : '/';
+  const created = await createInquiry({
+    name: cleanName,
+    phone: cleanPhone,
+    email: cleanEmail,
+    category: 'Chatbot',
+    country: cleanCountry,
+    visaType: cleanTopic,
+    ageGroup: '',
+    qualification: '',
+    experience: '',
+    languageScore: '',
+    travelDate: '',
+    intake: '',
+    serviceNeeded: cleanTopic,
+    details: { source: 'chatbot', requestType: isCallRequest ? 'scheduled_call' : 'contact', callDate: callDate || '', callTime: callTime || '', callDay: callDate ? new Date(`${callDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' }) : '' },
+    message: cleanMessage || `Chatbot contact request: ${cleanTopic}`,
+    sourcePage: cleanSourcePage,
+  });
+
+  await emailService.sendSubmissionNotifications({
+    formName: isCallRequest ? 'Chatbot call request' : 'Chatbot contact request',
+    recipientEmail: created.email,
+    fields: {
+      Name: created.name,
+      Phone: created.phone,
+      Email: created.email,
+      Topic: created.serviceNeeded,
+      Country: created.country,
+      ...(isCallRequest ? { 'Call date': callDate, 'Call day': created.details.callDay, 'Call time': callTime } : {}),
+      Message: created.message,
+      'Source page': created.sourcePage,
+    },
+  });
+
+  res.status(201).json({ ok: true, id: created._id, message: 'Your request has been sent. Our team will contact you.' });
+}));
+
 
 // Public homepage and about page CMS collections
 r.get('/banners', wrap(async (_req, res) => res.json(await getAllBanners())));
@@ -138,7 +306,7 @@ r.post('/testimonials/:id/like', wrap(async (req, res) => {
   res.json({ id: testimonial._id, likes: testimonial.likes });
 }));
 // Public career listings and candidate applications
-const careerUploadDir = path.resolve('uploads');
+const careerUploadDir = path.resolve('uploads', 'career-applications');
 if (!fs.existsSync(careerUploadDir)) fs.mkdirSync(careerUploadDir, { recursive: true });
 const resumeLimit = Math.max(1, Number(process.env.CAREER_RESUME_MAX_MB || 5)) * 1024 * 1024;
 const resumeUpload = multer({
@@ -193,7 +361,7 @@ r.post('/career/apply', resumeUpload.single('resume'), wrap(async (req, res) => 
       phone,
       currentCtc: String(currentCtc || '').trim(),
       coverLetter,
-      resumeUrl: '/uploads/' + req.file.filename,
+      resumeUrl: '/uploads/career-applications/' + req.file.filename,
     });
     if (!application) { discardResume(); return res.status(503).json({ message: 'Applications are temporarily unavailable.' }); }
 

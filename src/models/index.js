@@ -35,6 +35,7 @@ export const Post = model('Post', new Schema({
 export const Podcast = model('Podcast', new Schema({
   title: { type: String, required: true, trim: true, minlength: 3, maxlength: 120 },
   url: { type: String, required: true, trim: true, maxlength: 1000 },
+  thumbnailUrl: { type: String, trim: true, maxlength: 500, default: '' },
 }, opts));
 
 export const Inquiry = model('Inquiry', new Schema({
@@ -56,6 +57,19 @@ export const Inquiry = model('Inquiry', new Schema({
   sourcePage: String,
   status: { type: String, enum: ['new', 'contacted', 'in_progress', 'closed'], default: 'new' },
   notes: String,
+}, opts));
+
+export const ChatSession = model('ChatSession', new Schema({
+  visitorId: { type: String, required: true, unique: true },
+  details: { type: Schema.Types.Mixed, default: {} },
+  messages: [{ role: { type: String, enum: ['user', 'admin'] }, text: String, at: { type: Date, default: Date.now }, readAt: { type: Date, default: null } }],
+  updatedAt: { type: Date, default: Date.now },
+}, { timestamps: true }));
+
+export const ChatbotState = model('ChatbotState', new Schema({
+  key: { type: String, default: 'global', unique: true },
+  online: { type: Boolean, default: false },
+  activeVisitorId: { type: String, default: '' },
 }, opts));
 
 export const CMSContent = model('CMSContent', new Schema({
