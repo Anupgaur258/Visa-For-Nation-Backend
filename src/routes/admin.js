@@ -29,7 +29,7 @@ import {
   getAllCareerJobs, saveCareerJob, deleteCareerJob,
   getAllCareerApplications, deleteCareerApplication,
   getAllPodcastsAdmin, savePodcast, deletePodcast,
-  getChatAvailability, setChatAvailability, getChatSessions, getChatSession, saveChatSession, releaseChatSession,
+  getChatAvailability, setChatAvailability, getChatSessions, getChatSession, saveChatSession, claimChatSession, releaseChatSession, markChatMessagesRead,
 } from '../services/storage.js';
 
 const r = Router();
@@ -39,9 +39,25 @@ const configuredPodcastLimit = Number(process.env.PODCAST_MAX_COUNT || 20);
 const configuredBannerLimit = Number(process.env.BANNER_MAX_COUNT || 5);
 const awardSectionLimit = itemLimit('AWARD_SECTION_MAX_COUNT', 20);
 const contentLimits = { posts: itemLimit('BLOG_MAX_COUNT', 30), news: itemLimit('NEWS_MAX_COUNT', 30), podcasts: Number.isFinite(configuredPodcastLimit) ? Math.max(0, Math.floor(configuredPodcastLimit)) : 20, banners: Number.isFinite(configuredBannerLimit) ? Math.min(5, Math.max(0, Math.floor(configuredBannerLimit))) : 5, reels: itemLimit('REEL_MAX_COUNT', 20), testimonials: itemLimit('TESTIMONIAL_MAX_COUNT', 20), reviews: itemLimit('REVIEW_MAX_COUNT', 20), teamImages: itemLimit('TEAM_IMAGE_MAX_COUNT', 20) };
+const isYouTubeVideoUrl = value => {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    let id = '';
+    if (host === 'youtu.be') id = parsed.pathname.split('/').filter(Boolean)[0] || '';
+    else if (['youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(host)) id = parsed.searchParams.get('v') || parsed.pathname.match(/\/(?:embed|shorts|live)\/([^/?#]+)/)?.[1] || '';
+    return /^[A-Za-z0-9_-]{11}$/.test(id);
+  } catch { return false; }
+};
+const isInstagramReelUrl = value => {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    return ['instagram.com', 'www.instagram.com', 'm.instagram.com'].includes(parsed.hostname.toLowerCase()) && /^\/reel\/[^/]+\/?$/i.test(parsed.pathname);
+  } catch { return false; }
+};
 
 const uploadsDir = path.resolve('uploads');
-const uploadCategories = new Set(['banner', 'blogs', 'news', 'team', 'awards', 'general', 'podcast-thumbnails']);
+const uploadCategories = new Set(['banner', 'blogs', 'news', 'team', 'goals', 'awards', 'general', 'podcast-thumbnails']);
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -64,9 +80,35 @@ const videoUpload = multer({
     },
     filename: (_req, file, cb) => cb(null, `video-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname).toLowerCase()}`),
   }),
-  limits: { fileSize: Math.max(1, Number(process.env.TESTIMONIAL_VIDEO_MAX_MB || 100)) * 1024 * 1024 },
+  limits: { fileSize: Math.max(1, Number(process.env.TESTIMONIAL_MAX_SIZE_MB || 1)) * 1024 * 1024 },
   fileFilter: (_req, file, cb) => cb(null, /^video\/(mp4|webm|quicktime)$/.test(file.mimetype)),
 });
+const reelVideoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      const categoryDir = path.join(uploadsDir, 'reels');
+      fs.mkdir(categoryDir, { recursive: true }, error => cb(error, categoryDir));
+    },
+    filename: (_req, file, cb) => cb(null, `reel-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname).toLowerCase()}`),
+  }),
+  limits: { fileSize: Math.max(1, Number(process.env.REEL_MAX_SIZE_MB || 1)) * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, /^video\/(mp4|webm|quicktime)$/.test(file.mimetype)),
+});
+const uploadedVideoResponse = (category, durationEnv) => async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'Choose an MP4, WebM, or MOV video.' });
+  const maxDuration = Number(process.env[durationEnv]);
+  const duration = Number(req.body.durationSeconds);
+  const discardUpload = async () => { await fs.promises.unlink(req.file.path).catch(() => {}); };
+  if (!Number.isFinite(maxDuration) || maxDuration <= 0) {
+    await discardUpload();
+    return res.status(503).json({ message: `${durationEnv} is not configured on the server.` });
+  }
+  if (!Number.isFinite(duration) || duration <= 0 || duration > maxDuration) {
+    await discardUpload();
+    return res.status(400).json({ message: `Video duration must be ${maxDuration} seconds or shorter.` });
+  }
+  res.json({ path: `/uploads/${category}/${req.file.filename}` });
+};
 
 /* ========================================================================== */
 /*  AUTH                                                                      */
@@ -88,6 +130,11 @@ r.use(auth);
 r.get('/chatbot/status', wrap(async (_req, res) => res.json(await getChatAvailability())));
 r.put('/chatbot/status', wrap(async (req, res) => res.json(await setChatAvailability(req.body?.online === true))));
 r.get('/chatbot/sessions', wrap(async (_req, res) => res.json(await getChatSessions())));
+r.post('/chatbot/sessions/:visitorId/read', wrap(async (req, res) => {
+  if (!/^[a-zA-Z0-9-]{20,80}$/.test(req.params.visitorId)) return res.status(400).json({ message: 'Invalid chat session.' });
+  await markChatMessagesRead(req.params.visitorId, 'user');
+  res.json({ ok: true });
+}));
 r.post('/chatbot/sessions/:visitorId/messages', wrap(async (req, res) => {
   const cleanText = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
   if (!/^[a-zA-Z0-9-]{20,80}$/.test(req.params.visitorId) || !cleanText || cleanText.length > 1000) return res.status(400).json({ message: 'Enter a message up to 1000 characters.' });
@@ -96,7 +143,9 @@ r.post('/chatbot/sessions/:visitorId/messages', wrap(async (req, res) => {
   const status = await getChatAvailability();
   if (status.activeVisitorId !== req.params.visitorId) return res.status(409).json({ message: 'This conversation is no longer active. Select the current visitor.' });
   const messages = [...(existing.messages || []), { role: 'admin', text: cleanText, at: new Date().toISOString() }].slice(-200);
-  res.json(await saveChatSession({ ...existing, messages }));
+  const saved = await saveChatSession({ ...existing, messages });
+  await claimChatSession(req.params.visitorId);
+  res.json(saved);
 }));
 r.post('/chatbot/sessions/:visitorId/end', wrap(async (req, res) => {
   const ended = await releaseChatSession(req.params.visitorId);
@@ -228,10 +277,8 @@ r.post('/upload', upload.single('file'), (req, res) => {
 });
 
 // Admin uploaded testimonial videos
-r.post('/upload-video', videoUpload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ message: 'Choose an MP4, WebM, or MOV video.' });
-  res.json({ path: `/uploads/testimonials/${req.file.filename}` });
-});
+r.post('/upload-video', videoUpload.single('file'), uploadedVideoResponse('testimonials', 'TESTIMONIAL_MAX_DURATION_SECONDS'));
+r.post('/upload-reel-video', reelVideoUpload.single('file'), uploadedVideoResponse('reels', 'REEL_MAX_DURATION_SECONDS'));
 
 /* ========================================================================== */
 /*  TAB 3: SEO SECTION & VALIDATOR                                            */
@@ -299,8 +346,10 @@ r.get('/reel', wrap(async (_req, res) => {
   res.json(await getAllReels());
 }));
 r.post('/reel', wrap(async (req, res) => {
+  const urls = Array.isArray(req.body.urls) ? req.body.urls.map(url => String(url || '').trim()).filter(Boolean) : [];
+  if (urls.length !== 1 || (!isInstagramReelUrl(urls[0]) && !/^\/uploads\/reels\/[^/]+$/.test(urls[0]))) return res.status(400).json({ message: 'Add one Instagram Reel link or upload one reel video.' });
   if (!req.body._id && (await getAllReels()).length >= contentLimits.reels) return res.status(400).json({ message: 'Reel limit reached (' + contentLimits.reels + ').' });
-  res.json(await saveReel(req.body));
+  res.json(await saveReel({ ...req.body, urls }));
 }));
 r.delete('/reel/:id', wrap(async (req, res) => {
   await deleteReel(req.params.id);
@@ -312,8 +361,10 @@ r.get('/testimonial', wrap(async (_req, res) => {
   res.json(await getAllTestimonials());
 }));
 r.post('/testimonial', wrap(async (req, res) => {
+  const videoUrl = String(req.body.videoUrl || '').trim();
+  if (!isYouTubeVideoUrl(videoUrl) && !/^\/uploads\/testimonials\/[^/]+$/.test(videoUrl)) return res.status(400).json({ message: 'Use a YouTube video link or upload a testimonial video.' });
   if (!req.body._id && (await getAllTestimonials()).length >= contentLimits.testimonials) return res.status(400).json({ message: 'Testimonial limit reached (' + contentLimits.testimonials + ').' });
-  res.json(await saveTestimonial(req.body));
+  res.json(await saveTestimonial({ ...req.body, videoUrl }));
 }));
 r.delete('/testimonial/:id', wrap(async (req, res) => {
   await deleteTestimonial(req.params.id);

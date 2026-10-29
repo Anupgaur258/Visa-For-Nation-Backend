@@ -62,9 +62,15 @@ export const Inquiry = model('Inquiry', new Schema({
 export const ChatSession = model('ChatSession', new Schema({
   visitorId: { type: String, required: true, unique: true },
   details: { type: Schema.Types.Mixed, default: {} },
-  messages: [{ role: { type: String, enum: ['user', 'admin'] }, text: String, at: { type: Date, default: Date.now } }],
+  messages: [{ role: { type: String, enum: ['user', 'admin'] }, text: String, at: { type: Date, default: Date.now }, readAt: { type: Date, default: null } }],
   updatedAt: { type: Date, default: Date.now },
 }, { timestamps: true }));
+
+export const ChatbotState = model('ChatbotState', new Schema({
+  key: { type: String, default: 'global', unique: true },
+  online: { type: Boolean, default: false },
+  activeVisitorId: { type: String, default: '' },
+}, opts));
 
 export const CMSContent = model('CMSContent', new Schema({
   page: { type: String, required: true }, // 'home', 'about', 'contact', etc.

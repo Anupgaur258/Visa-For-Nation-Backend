@@ -34,6 +34,64 @@
       "subtitle": "Talk to our senior immigration consultants in Kailash Colony, New Delhi for a free eligibility check.",
       "phone": "+91 7677666677",
       "email": "info@visafornation.com"
+    },
+    "goals": {
+      "cards": [
+        {
+          "title": "Migrate",
+          "label": "I want to",
+          "description": "Work and settle abroad with expert guidance.",
+          "image": "assets/img/migrate.jpg.jpeg",
+          "alt": "Global career and migration opportunities",
+          "href": "/visa/pr/canada",
+          "action": "Explore migration"
+        },
+        {
+          "title": "Study",
+          "label": "I want to",
+          "description": "Find the right course and university abroad.",
+          "image": "assets/img/study.jpg.jpeg",
+          "alt": "Students on a university campus",
+          "href": "/study-in-canada",
+          "action": "Explore study options"
+        },
+        {
+          "title": "Visit",
+          "label": "I want to",
+          "description": "Get clear guidance for your visitor visa.",
+          "alt": "Travel opportunities around the world",
+          "href": "/schengen-tourist-visa",
+          "action": "Explore visitor visas",
+          "imageUrl": "uploads/goals/1793258070648-559487.png"
+        },
+        {
+          "title": "Work",
+          "label": "I want to",
+          "description": "Explore international jobs and work visa guidance.",
+          "alt": "International work opportunities",
+          "href": "/uk-job-assistance",
+          "action": "Explore work options",
+          "imageUrl": "uploads/goals/1793258108644-303095.png"
+        },
+        {
+          "title": "Dependent Visa",
+          "label": "I want to",
+          "description": "Plan to join your family abroad with expert support.",
+          "alt": "Family planning a move abroad",
+          "href": "/dependent-visa-assistance",
+          "action": "Explore dependent visas",
+          "imageUrl": "uploads/goals/1793258205658-399596.png"
+        },
+        {
+          "title": "Not Sure?",
+          "label": "I am",
+          "description": "Tell us what you have in mind and we’ll help you choose.",
+          "alt": "Explore your options with an advisor",
+          "href": "/contact-us",
+          "action": "Talk to our team",
+          "imageUrl": "uploads/goals/1793258212045-991689.png"
+        }
+      ]
     }
   },
   "about": {

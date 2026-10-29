@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { getPage, getAllPages, getCMSContent, getSEO, getPosts, getPostBySlug, getPodcasts, createInquiry, saveCMSSection, getAllCareerJobs, saveCareerApplication, getAllTestimonials, likeTestimonial, getAllBanners, getAllReels, getAllReviews, getAllTeamImages, getCareerApplicationCount, getChatAvailability, getChatSession, saveChatSession, claimChatSession } from '../services/storage.js';
+import { getPage, getAllPages, getCMSContent, getSEO, getPosts, getPostBySlug, getPodcasts, createInquiry, saveCMSSection, getAllCareerJobs, saveCareerApplication, getAllTestimonials, likeTestimonial, getAllBanners, getAllReels, getAllReviews, getAllTeamImages, getCareerApplicationCount, getChatAvailability, getChatSession, saveChatSession, claimChatSession, markChatMessagesRead } from '../services/storage.js';
 import emailService from '../services/emailService.js';
 
 const r = Router();
@@ -194,6 +194,7 @@ r.post('/chatbot/session', wrap(async (req, res) => {
 
 r.get('/chatbot/session/:visitorId', wrap(async (req, res) => {
   if (!/^[a-zA-Z0-9-]{20,80}$/.test(req.params.visitorId)) return res.status(400).json({ message: 'Invalid chat session.' });
+  if (req.query.read === 'true') await markChatMessagesRead(req.params.visitorId, 'admin');
   const session = await getChatSession(req.params.visitorId);
   const status = await getChatAvailability();
   res.json({ messages: session?.messages || [], online: status.online, busy: status.busy, available: status.available, active: status.activeVisitorId === req.params.visitorId });
@@ -210,6 +211,7 @@ r.post('/chatbot/session/:visitorId/messages', wrap(async (req, res) => {
   if (!existing) return res.status(404).json({ message: 'Chat session not found.' });
   const messages = [...(existing.messages || []), { role: 'user', text: cleanText, at: new Date().toISOString() }].slice(-200);
   await saveChatSession({ ...existing, messages });
+  await claimChatSession(req.params.visitorId);
   res.json({ ok: true, messages });
 }));
 

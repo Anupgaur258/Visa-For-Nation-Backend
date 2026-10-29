@@ -12,11 +12,11 @@ export default async function connectDB() {
       serverSelectionTimeoutMS: 3000,
     });
     dbState.isConnected = true;
-    console.log(`✅ MongoDB connected successfully to ${uri}`);
+    console.log('MongoDB connected successfully.');
   } catch (err) {
     dbState.isConnected = false;
     console.warn(`⚠️ MongoDB connection warning: ${err.message}`);
-    console.warn('📁 Operating with resilient JSON data storage in backend/data. Server is fully operational!');
+    console.warn('MongoDB is unavailable. Database-backed content changes will fail until it reconnects.');
   }
 
   // Handle connection events for the mongoose connection db 
@@ -27,6 +27,6 @@ export default async function connectDB() {
 
   mongoose.connection.on('disconnected', () => {
     dbState.isConnected = false;
-    console.warn('⚠️ MongoDB disconnected. Using local data fallback.');
+    console.warn('MongoDB disconnected. Database-backed content changes are unavailable until it reconnects.');
   });
 }
