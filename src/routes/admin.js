@@ -38,6 +38,8 @@ const itemLimit = (name, fallback) => Math.max(0, Number(process.env[name] || fa
 const configuredPodcastLimit = Number(process.env.PODCAST_MAX_COUNT || 20);
 const configuredBannerLimit = Number(process.env.BANNER_MAX_COUNT || 5);
 const awardSectionLimit = itemLimit('AWARD_SECTION_MAX_COUNT', 20);
+const galleryImageLimit = itemLimit('GALLERY_MAX_COUNT', itemLimit('MAX_GALLERY_IMAGES_PER_SECTION', 50));
+const imageUploadMaxSizeMb = Math.max(1, Number(process.env.IMAGE_UPLOAD_MAX_SIZE_MB) || 10);
 const contentLimits = { posts: itemLimit('BLOG_MAX_COUNT', 30), news: itemLimit('NEWS_MAX_COUNT', 30), podcasts: Number.isFinite(configuredPodcastLimit) ? Math.max(0, Math.floor(configuredPodcastLimit)) : 20, banners: Number.isFinite(configuredBannerLimit) ? Math.min(5, Math.max(0, Math.floor(configuredBannerLimit))) : 5, reels: itemLimit('REEL_MAX_COUNT', 20), testimonials: itemLimit('TESTIMONIAL_MAX_COUNT', 20), reviews: itemLimit('REVIEW_MAX_COUNT', 20), teamImages: itemLimit('TEAM_IMAGE_MAX_COUNT', 20) };
 const isYouTubeVideoUrl = value => {
   try {
@@ -57,7 +59,7 @@ const isInstagramReelUrl = value => {
 };
 
 const uploadsDir = path.resolve('uploads');
-const uploadCategories = new Set(['banner', 'blogs', 'news', 'team', 'goals', 'awards', 'general', 'podcast-thumbnails']);
+const uploadCategories = new Set(['banner', 'blogs', 'news', 'team', 'goals', 'awards', 'gallery', 'general', 'podcast-thumbnails']);
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -69,7 +71,7 @@ const upload = multer({
     },
     filename: (_q, f, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1e6) + path.extname(f.originalname).toLowerCase()),
   }),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: imageUploadMaxSizeMb * 1024 * 1024 },
   fileFilter: (_q, f, cb) => cb(null, /^image\//.test(f.mimetype)),
 });
 const videoUpload = multer({
@@ -202,6 +204,7 @@ r.get('/cms/:page', wrap(async (req, res) => {
 
 r.post('/cms/:page/:section', wrap(async (req, res) => {
   if (req.params.page === 'awards' && Array.isArray(req.body.images) && req.body.images.length > awardSectionLimit) return res.status(400).json({ message: 'Each award section can contain up to ' + awardSectionLimit + ' images.' });
+  if (req.params.page === 'gallery' && Array.isArray(req.body.images) && req.body.images.length > galleryImageLimit) return res.status(400).json({ message: 'Gallery supports up to ' + galleryImageLimit + ' images.' });
   const result = await saveCMSSection(req.params.page, req.params.section, req.body);
   res.json(result);
 }));

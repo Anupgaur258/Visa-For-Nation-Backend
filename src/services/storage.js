@@ -382,7 +382,7 @@ export async function savePost(data, contentType = 'blog') {
   requireMongoForContent();
   const isNews = contentType === 'news';
   data = { ...data, contentType: isNews ? 'news' : 'blog' };
-  const maxChars = Math.max(1, Number(process.env[isNews ? 'NEWS_MAX_CONTENT_CHARS' : 'BLOG_MAX_CONTENT_CHARS'] || 800));
+  const maxChars = Math.max(1, Number(process.env[isNews ? 'NEWS_MAX_CONTENT_CHARS' : 'BLOG_MAX_CONTENT_CHARS'] || 3500));
   if (String(data.content || '').length > maxChars) throw Object.assign(new Error(`${isNews ? 'News' : 'Blog'} content cannot exceed ${maxChars} characters.`), { status: 400 });
   if (!data.slug && data.title) {
     data.slug = data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
