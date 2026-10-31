@@ -29,4 +29,18 @@ app.use('/api', publicRoutes);
 app.use('/api/admin', adminRoutes);
 app.use((err, _req, res, _next) => { console.error(err); res.status(err.status || 500).json({ message: err.message || 'Server error' }); });
 
-connectDB().then(() => app.listen(process.env.PORT || 5000, () => console.log(`API running on :${process.env.PORT || 5000}`)));
+const port = Number(process.env.PORT) || 5000;
+connectDB().then(() => {
+  const server = app.listen(port, () => console.log(`API running on :${port}`));
+  server.on('error', error => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${port} is already in use. The backend may already be running; stop the existing instance or set PORT to a free port.`);
+      process.exit(1);
+    }
+    console.error('API server failed to start:', error);
+    process.exit(1);
+  });
+}).catch(error => {
+  console.error('API startup failed:', error);
+  process.exit(1);
+});
