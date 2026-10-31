@@ -131,7 +131,7 @@ r.use(auth);
 
 r.get('/chatbot/status', wrap(async (_req, res) => res.json(await getChatAvailability())));
 r.put('/chatbot/status', wrap(async (req, res) => res.json(await setChatAvailability(req.body?.online === true))));
-r.get('/chatbot/sessions', wrap(async (_req, res) => res.json(await getChatSessions())));
+r.get('/chatbot/sessions', wrap(async (req, res) => res.json(await getChatSessions({ page: req.query.page, limit: req.query.limit }))));
 r.post('/chatbot/sessions/:visitorId/read', wrap(async (req, res) => {
   if (!/^[a-zA-Z0-9-]{20,80}$/.test(req.params.visitorId)) return res.status(400).json({ message: 'Invalid chat session.' });
   await markChatMessagesRead(req.params.visitorId, 'user');
