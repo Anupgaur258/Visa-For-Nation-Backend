@@ -75,8 +75,10 @@ export async function createInquiry(data) {
 export async function getInquiries({ category, country, status, q, page = 1, limit, dateFrom, dateTo } = {}) {
    requireMongoForContent();
    // parse limit from env or use default
-   const limitNum = limit ? parseInt(limit) : (process.env.INQUIRY_PAGE_LIMIT ? parseInt(process.env.INQUIRY_PAGE_LIMIT) : 10);
-   const pageNum = parseInt(page);
+   const configuredLimit = Number.parseInt(process.env.INQUIRY_PAGE_LIMIT, 10) || 10;
+   const requestedLimit = Number.parseInt(limit, 10) || configuredLimit;
+   const limitNum = Math.min(100, Math.max(1, requestedLimit));
+   const pageNum = Math.max(1, Number.parseInt(page, 10) || 1);
    const skip = (pageNum - 1) * limitNum;
 
    let items = [];
@@ -243,9 +245,14 @@ export async function releaseChatSession(visitorId) {
   return Boolean(released);
 }
 
-export async function getChatSessions() {
+export async function getChatSessions({ page = 1, limit } = {}) {
   requireMongoForContent();
-  return ChatSession.find().sort('-updatedAt').lean();
+  const pageNum = Math.max(1, Number.parseInt(page, 10) || 1);
+  const configuredLimit = Math.max(1, Number.parseInt(process.env.CHAT_SESSION_PAGE_LIMIT, 10) || 25);
+  const limitNum = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || configuredLimit));
+  const rows = await ChatSession.find().sort('-updatedAt').skip((pageNum - 1) * limitNum).limit(limitNum + 1).lean();
+  const hasMore = rows.length > limitNum;
+  return { sessions: hasMore ? rows.slice(0, limitNum) : rows, page: pageNum, limit: limitNum, hasMore };
 }
 
 export async function getChatSession(visitorId) {

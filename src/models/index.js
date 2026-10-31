@@ -25,6 +25,7 @@ export const Post = model('Post', new Schema({
   image: String,
   content: String,
   category: String,
+  country: { type: String, trim: true, default: '' },
   subCategory: String,
   metaTitle: String,
   metaDescription: String,
