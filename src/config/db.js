@@ -17,6 +17,7 @@ const scheduleReconnect = () => {
 };
 
 export default async function connectDB() {
+  
   if (mongoose.connection.readyState === 1) {
     dbState.isConnected = true;
     return true;
