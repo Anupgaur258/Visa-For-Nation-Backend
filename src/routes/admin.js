@@ -131,7 +131,7 @@ r.use(auth);
 
 r.get('/chatbot/status', wrap(async (_req, res) => res.json(await getChatAvailability())));
 r.put('/chatbot/status', wrap(async (req, res) => res.json(await setChatAvailability(req.body?.online === true))));
-r.get('/chatbot/sessions', wrap(async (req, res) => res.json(await getChatSessions({ page: req.query.page, limit: req.query.limit }))));
+r.get('/chatbot/sessions', wrap(async (_req, res) => res.json(await getChatSessions())));
 r.post('/chatbot/sessions/:visitorId/read', wrap(async (req, res) => {
   if (!/^[a-zA-Z0-9-]{20,80}$/.test(req.params.visitorId)) return res.status(400).json({ message: 'Invalid chat session.' });
   await markChatMessagesRead(req.params.visitorId, 'user');
@@ -162,6 +162,7 @@ r.get('/stats', wrap(async (_q, res) => {
   const [inquiryStats, pages, posts, seo] = await Promise.all([
     getInquiryStats(),
     getAllPages(),
+
     getAllPostsAdmin(),
     getAllSEO(),
   ]);
@@ -189,12 +190,13 @@ r.put('/inquiries/:id', wrap(async (req, res) => {
 }));
 
 r.delete('/inquiries/:id', wrap(async (req, res) => {
+
   await deleteInquiry(req.params.id);
   res.json({ ok: true });
 }));
 
 /* ========================================================================== */
-/*  TAB 2: WEBSITE CMS & PAGES                                                */
+/*  TAB 2: WEBSITE CMS & PAGES                CONTENT DIFFERENT TAB                                 */
 /* ========================================================================== */
 // Page CMS Content
 r.get('/cms/:page', wrap(async (req, res) => {
@@ -277,9 +279,13 @@ r.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Image file required' });
   const category = String(req.body.category || 'general').toLowerCase();
   res.json({ path: `uploads/${category}/${req.file.filename}` });
+
 });
+// admin can add the testimonial so that thumbnail as well
+
 
 // Admin uploaded testimonial videos
+// testimonial video thumbnail
 r.post('/upload-video', videoUpload.single('file'), uploadedVideoResponse('testimonials', 'TESTIMONIAL_MAX_DURATION_SECONDS'));
 r.post('/upload-reel-video', reelVideoUpload.single('file'), uploadedVideoResponse('reels', 'REEL_MAX_DURATION_SECONDS'));
 
